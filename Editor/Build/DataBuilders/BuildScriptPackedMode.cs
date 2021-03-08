@@ -138,6 +138,23 @@ namespace UnityEditor.AddressableAssets.Build.DataBuilders
         }
 
         /// <summary>
+        /// Determines the catalogs to be built.
+        /// 
+        /// The default implementation will build solely the "main" catalog.
+        /// </summary>
+        /// <param name="builderInput">the builder input</param>
+        /// <param name="aaContext">the build context</param>
+        /// <returns>a list containing one build info object for each catalog to be built</returns>
+        protected virtual List<ContentCatalogBuildInfo> GetContentCatalogs(AddressablesDataBuilderInput builderInput, AddressableAssetsBuildContext aaContext)
+        {
+            var list = new List<ContentCatalogBuildInfo>(1);
+            var catalog = new ContentCatalogBuildInfo(ResourceManagerRuntimeData.kCatalogAddress, builderInput.RuntimeCatalogFilename);
+            catalog.Locations.AddRange(aaContext.locations);
+            list.Add(catalog);
+            return list;
+        }
+
+        /// <summary>
         /// The method that does the actual building after all the groups have been processed.
         /// </summary>
         /// <param name="builderInput">The generic builderInput of the</param>
@@ -236,29 +253,39 @@ namespace UnityEditor.AddressableAssets.Build.DataBuilders
                 }
             }
 
-            var contentCatalog = new ContentCatalogData(ResourceManagerRuntimeData.kCatalogAddress);
-            contentCatalog.SetData(aaContext.locations, aaContext.Settings.OptimizeCatalogSize);
-
-            contentCatalog.ResourceProviderData.AddRange(m_ResourceProviderData);
+            var resourceProviderData = new List<ObjectInitializationData>(m_ResourceProviderData);
             foreach (var t in aaContext.providerTypes)
-                contentCatalog.ResourceProviderData.Add(ObjectInitializationData.CreateSerializedInitializationData(t));
+            {
+                resourceProviderData.Add(ObjectInitializationData.CreateSerializedInitializationData(t));
+            }
 
-            contentCatalog.InstanceProviderData = ObjectInitializationData.CreateSerializedInitializationData(instanceProviderType.Value);
-            contentCatalog.SceneProviderData = ObjectInitializationData.CreateSerializedInitializationData(sceneProviderType.Value);
+            var instanceProviderData = ObjectInitializationData.CreateSerializedInitializationData(instanceProviderType.Value);
+            var sceneProviderData = ObjectInitializationData.CreateSerializedInitializationData(sceneProviderType.Value);
 
-            //save catalog
-            var jsonText = JsonUtility.ToJson(contentCatalog);
-            CreateCatalogFiles(jsonText, builderInput, aaContext);
+            var catalogs = GetContentCatalogs(builderInput, aaContext);
+            foreach (var catalogInfo in catalogs)
+            {
+                var contentCatalog = new ContentCatalogData(catalogInfo.Identifier);
+                contentCatalog.SetData(catalogInfo.Locations, aaContext.Settings.OptimizeCatalogSize);
 
-            foreach (var pd in contentCatalog.ResourceProviderData)
+                contentCatalog.ResourceProviderData.AddRange(resourceProviderData);
+                contentCatalog.InstanceProviderData = instanceProviderData;
+                contentCatalog.SceneProviderData = sceneProviderData;
+
+                // save catalog
+                var jsonText = JsonUtility.ToJson(contentCatalog);
+                CreateCatalogFiles(jsonText, builderInput, aaContext, catalogInfo);
+            }
+
+            foreach (var pd in resourceProviderData)
             {
                 m_Linker.AddTypes(pd.ObjectType.Value);
                 m_Linker.AddTypes(pd.GetRuntimeTypes());
             }
-            m_Linker.AddTypes(contentCatalog.InstanceProviderData.ObjectType.Value);
-            m_Linker.AddTypes(contentCatalog.InstanceProviderData.GetRuntimeTypes());
-            m_Linker.AddTypes(contentCatalog.SceneProviderData.ObjectType.Value);
-            m_Linker.AddTypes(contentCatalog.SceneProviderData.GetRuntimeTypes());
+            m_Linker.AddTypes(instanceProviderData.ObjectType.Value);
+            m_Linker.AddTypes(instanceProviderData.GetRuntimeTypes());
+            m_Linker.AddTypes(sceneProviderData.ObjectType.Value);
+            m_Linker.AddTypes(sceneProviderData.GetRuntimeTypes());
 
             foreach (var io in aaContext.Settings.InitializationObjects)
             {
@@ -365,7 +392,7 @@ namespace UnityEditor.AddressableAssets.Build.DataBuilders
             return addressableEntryToCachedStateMap;
         }
 
-        internal bool CreateCatalogFiles(string jsonText, AddressablesDataBuilderInput builderInput, AddressableAssetsBuildContext aaContext)
+        internal bool CreateCatalogFiles(string jsonText, AddressablesDataBuilderInput builderInput, AddressableAssetsBuildContext aaContext, ContentCatalogBuildInfo buildInfo = null)
         {
             if (string.IsNullOrEmpty(jsonText) || builderInput == null || aaContext == null)
             {
@@ -374,8 +401,9 @@ namespace UnityEditor.AddressableAssets.Build.DataBuilders
             }
 
             // Path needs to be resolved at runtime.
-            string localLoadPath = "{UnityEngine.AddressableAssets.Addressables.RuntimePath}/" + builderInput.RuntimeCatalogFilename;
-            m_CatalogBuildPath = Path.Combine(Addressables.BuildPath, builderInput.RuntimeCatalogFilename);
+            var catalogFilename = buildInfo?.JsonFilename ?? builderInput.RuntimeCatalogFilename;
+            string localLoadPath = "{UnityEngine.AddressableAssets.Addressables.RuntimePath}/" + catalogFilename;
+            m_CatalogBuildPath = Path.Combine(Addressables.BuildPath, catalogFilename);
 
             if (aaContext.Settings.BundleLocalCatalog)
             {
@@ -396,18 +424,29 @@ namespace UnityEditor.AddressableAssets.Build.DataBuilders
             string[] dependencyHashes = null;
             if (aaContext.Settings.BuildRemoteCatalog)
             {
-                dependencyHashes = CreateRemoteCatalog(jsonText, aaContext.runtimeData.CatalogLocations, aaContext.Settings, builderInput);
+                if (buildInfo != null)
+                {
+                    dependencyHashes = CreateRemoteCatalog(jsonText, aaContext.runtimeData.CatalogLocations, aaContext.Settings, builderInput);
+                }
+                else
+                {
+                    Debug.LogError("BuildRemoteCatalog is currently not supported");
+                }
             }
 
-            aaContext.runtimeData.CatalogLocations.Add(new ResourceLocationData(
-                new[] { ResourceManagerRuntimeData.kCatalogAddress },
-                localLoadPath,
-                typeof(ContentCatalogProvider),
-                typeof(ContentCatalogData),
-                dependencyHashes));
+            if (buildInfo?.Register ?? true)
+            {
+                aaContext.runtimeData.CatalogLocations.Add(new ResourceLocationData(
+                    new[] { buildInfo?.Identifier ?? ResourceManagerRuntimeData.kCatalogAddress },
+                    localLoadPath,
+                    typeof(ContentCatalogProvider),
+                    typeof(ContentCatalogData),
+                    dependencyHashes));
+            }
 
             return true;
         }
+
 
         string GetProjectName()
         {
@@ -677,47 +716,50 @@ namespace UnityEditor.AddressableAssets.Build.DataBuilders
             switch (packingMode)
             {
                 case BundledAssetGroupSchema.BundlePackingMode.PackTogether:
-                {
-                    var allEntries = new List<AddressableAssetEntry>();
-                    foreach (AddressableAssetEntry a in assetGroup.entries)
-                        a.GatherAllAssets(allEntries, true, true, false);
-                    combinedEntries.AddRange(allEntries);
-                    GenerateBuildInputDefinitions(allEntries, bundleInputDefs, CalculateGroupHash(allEntries), "all");
-                } break;
-                case BundledAssetGroupSchema.BundlePackingMode.PackSeparately:
-                {
-                    foreach (AddressableAssetEntry a in assetGroup.entries)
                     {
                         var allEntries = new List<AddressableAssetEntry>();
-                        a.GatherAllAssets(allEntries, true, true, false);
-                        combinedEntries.AddRange(allEntries);
-                        GenerateBuildInputDefinitions(allEntries, bundleInputDefs, CalculateGroupHash(allEntries), a.address);
-                    }
-                } break;
-                case BundledAssetGroupSchema.BundlePackingMode.PackTogetherByLabel:
-                {
-                    var labelTable = new Dictionary<string, List<AddressableAssetEntry>>();
-                    foreach (AddressableAssetEntry a in assetGroup.entries)
-                    {
-                        var sb = new StringBuilder();
-                        foreach (var l in a.labels)
-                            sb.Append(l);
-                        var key = sb.ToString();
-                        List<AddressableAssetEntry> entries;
-                        if (!labelTable.TryGetValue(key, out entries))
-                            labelTable.Add(key, entries = new List<AddressableAssetEntry>());
-                        entries.Add(a);
-                    }
-
-                    foreach (var entryGroup in labelTable)
-                    {
-                        var allEntries = new List<AddressableAssetEntry>();
-                        foreach (var a in entryGroup.Value)
+                        foreach (AddressableAssetEntry a in assetGroup.entries)
                             a.GatherAllAssets(allEntries, true, true, false);
                         combinedEntries.AddRange(allEntries);
-                        GenerateBuildInputDefinitions(allEntries, bundleInputDefs, CalculateGroupHash(allEntries), entryGroup.Key);
+                        GenerateBuildInputDefinitions(allEntries, bundleInputDefs, CalculateGroupHash(allEntries), "all");
                     }
-                } break;
+                    break;
+                case BundledAssetGroupSchema.BundlePackingMode.PackSeparately:
+                    {
+                        foreach (AddressableAssetEntry a in assetGroup.entries)
+                        {
+                            var allEntries = new List<AddressableAssetEntry>();
+                            a.GatherAllAssets(allEntries, true, true, false);
+                            combinedEntries.AddRange(allEntries);
+                            GenerateBuildInputDefinitions(allEntries, bundleInputDefs, CalculateGroupHash(allEntries), a.address);
+                        }
+                    }
+                    break;
+                case BundledAssetGroupSchema.BundlePackingMode.PackTogetherByLabel:
+                    {
+                        var labelTable = new Dictionary<string, List<AddressableAssetEntry>>();
+                        foreach (AddressableAssetEntry a in assetGroup.entries)
+                        {
+                            var sb = new StringBuilder();
+                            foreach (var l in a.labels)
+                                sb.Append(l);
+                            var key = sb.ToString();
+                            List<AddressableAssetEntry> entries;
+                            if (!labelTable.TryGetValue(key, out entries))
+                                labelTable.Add(key, entries = new List<AddressableAssetEntry>());
+                            entries.Add(a);
+                        }
+
+                        foreach (var entryGroup in labelTable)
+                        {
+                            var allEntries = new List<AddressableAssetEntry>();
+                            foreach (var a in entryGroup.Value)
+                                a.GatherAllAssets(allEntries, true, true, false);
+                            combinedEntries.AddRange(allEntries);
+                            GenerateBuildInputDefinitions(allEntries, bundleInputDefs, CalculateGroupHash(allEntries), entryGroup.Key);
+                        }
+                    }
+                    break;
                 default:
                     throw new Exception("Unknown Packing Mode");
             }
