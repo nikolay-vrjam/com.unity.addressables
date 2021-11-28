@@ -34,6 +34,11 @@ namespace UnityEditor.AddressableAssets.Build.DataBuilders
         [SerializedTypeRestrictionAttribute(type = typeof(ISceneProvider))]
         public SerializedType sceneProviderType = new SerializedType() { Value = typeof(SceneProvider) };
 
+        /// <summary>
+        /// Stores the logged information of all the build tasks.
+        /// </summary>
+        public IBuildLogger Log { get { return m_Log; } }
+
         [NonSerialized]
         internal IBuildLogger m_Log;
 
@@ -50,10 +55,8 @@ namespace UnityEditor.AddressableAssets.Build.DataBuilders
         internal static void WriteBuildLog(BuildLog log, string directory)
         {
             Directory.CreateDirectory(directory);
-#if UNITY_2019_2_OR_NEWER // PackageManager package inspection APIs didn't exist until 2019.2
             PackageManager.PackageInfo info = PackageManager.PackageInfo.FindForAssembly(typeof(BuildScriptBase).Assembly);
             log.AddMetaData(info.name, info.version);
-#endif
             File.WriteAllText(Path.Combine(directory, "AddressablesBuildTEP.json"), log.FormatForTraceEventProfiler());
         }
 
@@ -77,17 +80,31 @@ namespace UnityEditor.AddressableAssets.Build.DataBuilders
 
             AddressablesRuntimeProperties.ClearCachedPropertyValues();
 
-            TResult result;
+            TResult result = default;
             // Append the file registry to the results
             using (m_Log.ScopedStep(LogLevel.Info, $"Building {this.Name}"))
             {
-                result = BuildDataImplementation<TResult>(builderInput);
+                try
+                {
+                    result = BuildDataImplementation<TResult>(builderInput);
+                }
+                catch (Exception e)
+                {
+                    string errMessage;
+                    if (e.Message == "path")
+                        errMessage = "Invalid path detected during build. Check for unmatched brackets in your active profile's variables.";
+                    else
+                        errMessage = e.Message;
+                    
+                    Debug.LogError(errMessage);
+                    return AddressableAssetBuildResult.CreateResult<TResult>(null, 0, errMessage);
+                }
                 if (result != null)
                     result.FileRegistry = builderInput.Registry;
             }
 
             if (builderInput.Logger == null && m_Log != null)
-                WriteBuildLog((BuildLog)m_Log, Path.GetDirectoryName(Application.dataPath) + "/Library/com.unity.addressables");
+                WriteBuildLog((BuildLog)m_Log, Path.GetDirectoryName(Application.dataPath) + "/" + Addressables.LibraryPath);
 
             return result;
         }

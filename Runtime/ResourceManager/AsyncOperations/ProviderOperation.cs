@@ -18,10 +18,11 @@ namespace UnityEngine.ResourceManagement.AsyncOperations
         void SetProgressCallback(Func<float> callback);
         void ProviderCompleted<T>(T result, bool status, Exception e);
         Type RequestedType { get; }
-
         void SetDownloadProgressCallback(Func<DownloadStatus> callback);
+        void SetWaitForCompletionCallback(Func<bool> callback);
     }
 
+    [UnityEngine.Scripting.Preserve]
     internal class ProviderOperation<TObject> : AsyncOperationBase<TObject>, IGenericProviderOperation, ICachable
     {
         private bool m_ReleaseDependenciesOnFailure = true;
@@ -29,13 +30,14 @@ namespace UnityEngine.ResourceManagement.AsyncOperations
         private Action<int, IList<object>> m_GetDepCallback;
         private Func<float> m_GetProgressCallback;
         private Func<DownloadStatus> m_GetDownloadProgressCallback;
+        private Func<bool> m_WaitForCompletionCallback;
         private DownloadStatus m_DownloadStatus;
         private IResourceProvider m_Provider;
         internal AsyncOperationHandle<IList<AsyncOperationHandle>> m_DepOp;
         private IResourceLocation m_Location;
         private int m_ProvideHandleVersion;
         private bool m_NeedsRelease;
-        int ICachable.Hash { get; set; }
+        IOperationCacheKey ICachable.Key { get; set; }
         private ResourceManager m_ResourceManager;
         private const float k_OperationWaitingToCompletePercentComplete = 0.99f;
         public int ProvideHandleVersion { get { return m_ProvideHandleVersion; } }
@@ -47,16 +49,36 @@ namespace UnityEngine.ResourceManagement.AsyncOperations
                 m_DownloadStatus = m_GetDownloadProgressCallback();
         }
 
+        public void SetWaitForCompletionCallback(Func<bool> callback)
+        {
+            m_WaitForCompletionCallback = callback;
+        }
+
+        ///<inheritdoc />
+        protected  override bool InvokeWaitForCompletion()
+        {
+            if (IsDone)
+                return true;
+            if (m_DepOp.IsValid() && !m_DepOp.IsDone)
+                m_DepOp.WaitForCompletion();
+            if (m_WaitForCompletionCallback == null)
+                return false;
+            m_RM?.Update(Time.unscaledDeltaTime);
+            if (!HasExecuted)
+                InvokeExecute();
+            if (m_WaitForCompletionCallback == null)
+                return false;
+            return m_WaitForCompletionCallback.Invoke();
+        }
+
         internal override DownloadStatus GetDownloadStatus(HashSet<object> visited)
         {
             var depDLS = m_DepOp.IsValid() ? m_DepOp.InternalGetDownloadStatus(visited) : default;
 
             if (m_GetDownloadProgressCallback != null)
                 m_DownloadStatus = m_GetDownloadProgressCallback();
-            else if(IsDone)
-                m_DownloadStatus.DownloadedBytes = m_DownloadStatus.TotalBytes;
 
-            if (IsDone)
+            if (Status == AsyncOperationStatus.Succeeded)
                 m_DownloadStatus.DownloadedBytes = m_DownloadStatus.TotalBytes;
 
             return new DownloadStatus() { DownloadedBytes = m_DownloadStatus.DownloadedBytes + depDLS.DownloadedBytes, TotalBytes = m_DownloadStatus.TotalBytes + depDLS.TotalBytes, IsDone = IsDone };
@@ -66,7 +88,8 @@ namespace UnityEngine.ResourceManagement.AsyncOperations
         {
         }
 
-        protected override void GetDependencies(List<AsyncOperationHandle> deps)
+        /// <inheritdoc />
+        public override void GetDependencies(List<AsyncOperationHandle> deps)
         {
             if (m_DepOp.IsValid())
                 deps.Add(m_DepOp);
@@ -130,6 +153,7 @@ namespace UnityEngine.ResourceManagement.AsyncOperations
             m_ProvideHandleVersion++;
             m_GetProgressCallback = null;
             m_GetDownloadProgressCallback = null;
+            m_WaitForCompletionCallback = null;
             m_NeedsRelease = status;
 
             ProviderOperation<T> top = this as ProviderOperation<T>;
@@ -152,7 +176,7 @@ namespace UnityEngine.ResourceManagement.AsyncOperations
                 throw new Exception(errorMsg);
             }
 
-            Complete(Result, status, e != null ? e.Message : string.Empty, m_ReleaseDependenciesOnFailure);
+            Complete(Result, status, e, m_ReleaseDependenciesOnFailure);
         }
 
         protected override float Progress
@@ -224,6 +248,7 @@ namespace UnityEngine.ResourceManagement.AsyncOperations
             m_Provider = provider;
             m_Location = location;
             m_ReleaseDependenciesOnFailure = true;
+            SetWaitForCompletionCallback(WaitForCompletionHandler);
         }
 
         public void Init(ResourceManager rm, IResourceProvider provider, IResourceLocation location, AsyncOperationHandle<IList<AsyncOperationHandle>> depOp, bool releaseDependenciesOnFailure)
@@ -236,6 +261,20 @@ namespace UnityEngine.ResourceManagement.AsyncOperations
             m_Provider = provider;
             m_Location = location;
             m_ReleaseDependenciesOnFailure = releaseDependenciesOnFailure;
+            SetWaitForCompletionCallback(WaitForCompletionHandler);
+        }
+
+        bool WaitForCompletionHandler()
+        {
+            if (IsDone)
+                return true;
+
+            if (!m_DepOp.IsDone)
+                m_DepOp.WaitForCompletion();
+            if (!HasExecuted)
+                InvokeExecute();
+
+            return IsDone;
         }
 
         protected override void Destroy()

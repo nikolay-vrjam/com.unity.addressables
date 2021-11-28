@@ -1,6 +1,7 @@
 using UnityEngine;
 using NUnit.Framework;
 using System;
+using System.Collections.Generic;
 using UnityEngine.AddressableAssets.Initialization;
 
 namespace AddrRuntimePropertiesTests
@@ -94,6 +95,107 @@ namespace AddrRuntimePropertiesTests
             });
 
             Assert.AreEqual(expectedResult, actualResult);
+        }
+
+        [Test]
+        [Timeout(1000)]
+        public void RuntimeProperties_CanDetectCyclicLoops()
+        {
+            string a = "[B]";
+            string b = "[A]";
+            string toEval = "Test_[A]_";
+            string expectedResult = "Test_#ERROR-CyclicToken#_";
+            
+            string actualResult = AddressablesRuntimeProperties.EvaluateString(toEval, '[', ']', s =>
+            {
+                switch (s)
+                {
+                    case "A":
+                        return a;
+                    case "B":
+                        return b;
+                }
+                return "";
+            });
+            
+            Assert.AreEqual(expectedResult, actualResult);
+        }
+        
+        [Test]
+        [Timeout(1000)]
+        public void RuntimeProperties_CanEvaluateInnerProperties()
+        {
+            Dictionary<string, string> stringLookup = new Dictionary<string, string>();
+            stringLookup.Add("B", "inner");
+            stringLookup.Add("With_inner", "Success");
+            string toEval = "Test_[With_[B]]";
+            string expectedResult = "Test_Success";
+            
+            string actualResult = AddressablesRuntimeProperties.EvaluateString(toEval, '[', ']', s =>
+            {
+                if (stringLookup.TryGetValue(s, out string val))
+                    return val;
+                return "";
+            });
+            
+            Assert.AreEqual(expectedResult, actualResult);
+        }
+
+        [Test]
+        public void RuntimeProperties_EvaluateString_CreatesLocalStackOnRecursiveCall()
+        {
+            string testString = "[{[{correct}]bad}]";
+            string expectedResult = "CORRECTBAD";
+            string actualResult = AddressablesRuntimeProperties.EvaluateString(testString, '[', ']', s =>
+            {
+                return AddressablesRuntimeProperties.EvaluateString(s, '{', '}', str => str.ToUpper());
+            });
+            Assert.AreEqual(expectedResult, actualResult, "EvaluateString does not properly initialize a local stack for recursive/simultaneous calls.");
+        }
+        
+        [Test]
+        public void RuntimeProperties_EvaluateString_CreatesLocalStacksOnDeepRecursiveCall()
+        {
+            string testString = "[{([{(correct)}]bad)}]";
+            string expectedResult = "CORRECTBAD";
+            string actualResult = AddressablesRuntimeProperties.EvaluateString(testString, '[', ']', s =>
+            {
+                return AddressablesRuntimeProperties.EvaluateString(s, '{', '}', str =>
+                {
+                    return AddressablesRuntimeProperties.EvaluateString(str, '(', ')', str2 => str2.ToUpper());
+                });
+            });
+            Assert.AreEqual(expectedResult, actualResult, "EvaluateString does not properly initialize a local stack for recursive/simultaneous calls.");
+        }
+
+        [Test]
+        [Timeout(3000)]
+        public void RuntimeProperties_EvaluateString_DoesNotLoopInfinitelyOnUnmatchedEndingDelimiter()
+        {
+            string testString = "[correct]bad]";
+            string expectedResult = "#ERROR-" + testString+" contains unmatched delimiters#";
+            string actualResult = AddressablesRuntimeProperties.EvaluateString(testString, '[', ']', s => s);
+            Assert.AreEqual(expectedResult, actualResult, "EvaluateString encounters infinite loop with unmatched ending delimiter");
+        }
+
+        [Test]
+        [Timeout(3000)]
+        public void RuntimeProperties_EvaluateString_DoesNotLoopInfinitelyOnUnmatchedStartingDelimiter()
+        {
+            string testString = "[[correct]bad";
+            string expectedResult = "[correctbad";
+            string actualResult = AddressablesRuntimeProperties.EvaluateString(testString, '[', ']', s => s);
+            Assert.AreEqual(expectedResult, actualResult, "EvaluateString encounters infinite loop with unmatched starting delimiter");
+        }
+
+        [Test]
+        [Timeout(3000)]
+        public void RuntimeProperties_EvaluateString_DoesNotLoopInfinitelyOnImproperlyOrderedDelimiters()
+        {
+            string testString = "][correct][bad";
+            string expectedResult = "]correct[bad";
+            string actualResult = AddressablesRuntimeProperties.EvaluateString(testString, '[', ']', s => s);
+            Assert.AreEqual(expectedResult, actualResult, "EvaluateString encounters infinite loop on reversed delimiters");
         }
 
         [Test]

@@ -23,13 +23,27 @@ namespace UnityEditor.AddressableAssets.GUI
         [FormerlySerializedAs("mchs")]
         [SerializeField]
         MultiColumnHeaderState m_Mchs;
-        AddressableAssetEntryTreeView m_EntryTree;
+        internal AddressableAssetEntryTreeView m_EntryTree;
 
         public AddressableAssetsWindow window;
 
         SearchField m_SearchField;
         const int k_SearchHeight = 20;
-        internal AddressableAssetSettings settings { get { return AddressableAssetSettingsDefaultObject.Settings; } }
+
+        AddressableAssetSettings m_Settings;
+        internal AddressableAssetSettings settings
+        {
+            get
+            {
+                if (m_Settings == null)
+                {
+                    m_Settings = AddressableAssetSettingsDefaultObject.Settings;
+                }
+
+                return m_Settings;
+            }
+            set => m_Settings = value;
+        }
 
         bool m_ResizingVerticalSplitter;
         Rect m_VerticalSplitterRect = new Rect(0, 0, 10, k_SplitterWidth);
@@ -42,6 +56,56 @@ namespace UnityEditor.AddressableAssets.GUI
             window = w;
             m_VerticalSplitterPercent = 0.8f;
             OnEnable();
+        }
+
+        public void SelectEntries(IList<AddressableAssetEntry> entries)
+        {
+            List<int> selectedIDs = new List<int>(entries.Count);
+            Stack<AssetEntryTreeViewItem> items = new Stack<AssetEntryTreeViewItem>();
+            
+            if (m_EntryTree == null || m_EntryTree.Root == null)
+                InitialiseEntryTree();
+            
+            foreach (TreeViewItem item in m_EntryTree.Root.children)
+            {
+                if(item is AssetEntryTreeViewItem i)
+                    items.Push(i);
+            }
+            while (items.Count > 0)
+            {
+                var i = items.Pop();
+
+                bool contains = false;
+                if (i.entry != null)
+                {
+                    foreach (AddressableAssetEntry entry in entries)
+                    {
+                        // class instances can be different but refer to the same entry, use guid
+                        if (entry.guid == i.entry.guid && i.entry.TargetAsset == entry.TargetAsset)
+                        {
+                            contains = true;
+                            break;
+                        }
+                    }
+                }
+                
+                if (!i.IsGroup && contains)
+                {
+                    selectedIDs.Add(i.id);
+                }
+                else if (i.hasChildren)
+                {
+                    foreach (TreeViewItem child in i.children)
+                    {
+                        if(child is AssetEntryTreeViewItem c)
+                            items.Push(c);
+                    }
+                }
+            }
+
+            foreach (int i in selectedIDs)
+                m_EntryTree.FrameItem(i);
+            m_EntryTree.SetSelection(selectedIDs);
         }
 
         void OnSettingsModification(AddressableAssetSettings s, AddressableAssetSettings.ModificationEvent e, object o)
@@ -139,13 +203,17 @@ namespace UnityEditor.AddressableAssets.GUI
                             EditorGUIUtility.PingObject(AddressableAssetSettingsDefaultObject.Settings);
                             Selection.activeObject = AddressableAssetSettingsDefaultObject.Settings;
                         });
-                        menu.AddItem(new GUIContent("Profiles"), false, () => EditorWindow.GetWindow<ProfileWindow>().Show(true));
-                        menu.AddItem(new GUIContent("Labels"), false, () => EditorWindow.GetWindow<LabelWindow>(true).Intialize(settings));
-                        menu.AddItem(new GUIContent("Analyze"), false, AnalyzeWindow.ShowWindow);
-                        menu.AddItem(new GUIContent("Hosting Services"), false, () => EditorWindow.GetWindow<HostingServicesWindow>().Show(settings));
-                        menu.AddItem(new GUIContent("Event Viewer"), false, ResourceProfilerWindow.ShowWindow);
                         menu.AddItem(new GUIContent("Check for Content Update Restrictions"), false, OnPrepareUpdate);
-                        menu.AddItem(new GUIContent("Show Sprite and Subobject Addresses"), ProjectConfigData.showSubObjectsInGroupView, () => { ProjectConfigData.showSubObjectsInGroupView = !ProjectConfigData.showSubObjectsInGroupView; m_EntryTree.Reload(); });
+                        
+                        menu.AddItem(new GUIContent("Window/Profiles"), false, () => EditorWindow.GetWindow<ProfileWindow>().Show(true));
+                        menu.AddItem(new GUIContent("Window/Labels"), false, () => EditorWindow.GetWindow<LabelWindow>(true).Intialize(settings));
+                        menu.AddItem(new GUIContent("Window/Analyze"), false, AnalyzeWindow.ShowWindow);
+                        menu.AddItem(new GUIContent("Window/Hosting Services"), false, () => EditorWindow.GetWindow<HostingServicesWindow>().Show(settings));
+                        menu.AddItem(new GUIContent("Window/Event Viewer"), false, ResourceProfilerWindow.ShowWindow);
+
+                        menu.AddItem(new GUIContent("Groups View/Show Sprite and Subobject Addresses"), ProjectConfigData.ShowSubObjectsInGroupView, () => { ProjectConfigData.ShowSubObjectsInGroupView = !ProjectConfigData.ShowSubObjectsInGroupView; m_EntryTree.Reload(); });
+                        menu.AddItem(new GUIContent("Groups View/Group Hierarchy with Dashes", "If enabled, group names are parsed as if a '-' represented a child in hierarchy.  So a group called 'a-b-c' would be displayed as if it were in a folder called 'b' that lived in a folder called 'a'.  In this mode, only groups without '-' can be rearranged within the groups window."),
+                            ProjectConfigData.ShowGroupsAsHierarchy, () => { ProjectConfigData.ShowGroupsAsHierarchy = !ProjectConfigData.ShowGroupsAsHierarchy; m_EntryTree.Reload(); });
 
                         var bundleList = AssetDatabase.GetAllAssetBundleNames();
                         if (bundleList != null && bundleList.Length > 0)
@@ -209,6 +277,15 @@ namespace UnityEditor.AddressableAssets.GUI
                     menu.DropDown(rBuild);
                 }
 
+#if (ENABLE_CCD && UNITY_2019_4_OR_NEWER)
+                //Build & Release 
+                var guiBuildAndRelease = new GUIContent("Build & Release");
+                if (GUILayout.Button(guiBuildAndRelease, EditorStyles.toolbarButton))
+                {
+                    OnBuildAndRelease();
+                }
+#endif
+
                 GUILayout.Space(4);
                 Rect searchRect = GUILayoutUtility.GetRect(0, toolbarPos.width * 0.6f, 16f, 16f, m_SearchStyles[0], GUILayout.MinWidth(65), GUILayout.MaxWidth(300));
                 Rect popupPosition = searchRect;
@@ -217,24 +294,16 @@ namespace UnityEditor.AddressableAssets.GUI
                 if (Event.current.type == EventType.MouseDown && popupPosition.Contains(Event.current.mousePosition))
                 {
                     var menu = new GenericMenu();
-                    menu.AddItem(new GUIContent("Hierarchical Search"), ProjectConfigData.hierarchicalSearch, OnHierSearchClick);
+                    menu.AddItem(new GUIContent("Hierarchical Search"), ProjectConfigData.HierarchicalSearch, OnHierSearchClick);
                     menu.DropDown(popupPosition);
                 }
                 else
                 {
-                    var baseSearch = ProjectConfigData.hierarchicalSearch ? m_EntryTree.customSearchString : m_EntryTree.searchString;
+                    var baseSearch = ProjectConfigData.HierarchicalSearch ? m_EntryTree.customSearchString : m_EntryTree.searchString;
                     var searchString = m_SearchField.OnGUI(searchRect, baseSearch, m_SearchStyles[0], m_SearchStyles[1], m_SearchStyles[2]);
                     if (baseSearch != searchString)
                     {
-                        if (ProjectConfigData.hierarchicalSearch)
-                        {
-                            m_EntryTree.customSearchString = searchString;
-                            Reload();
-                        }
-                        else
-                        {
-                            m_EntryTree.searchString = searchString;
-                        }
+                        m_EntryTree?.Search(searchString);
                     }
                 }
             }
@@ -269,6 +338,13 @@ namespace UnityEditor.AddressableAssets.GUI
                 ContentUpdatePreviewWindow.PrepareForContentUpdate(AddressableAssetSettingsDefaultObject.Settings, path);
         }
 
+#if (ENABLE_CCD && UNITY_2019_4_OR_NEWER)
+        async void OnBuildAndRelease()
+        {
+            await AddressableAssetSettings.BuildAndReleasePlayerContent();
+        }
+#endif
+
         void OnBuildScript(object context)
         {
             OnSetActiveBuildScript(context);
@@ -299,7 +375,7 @@ namespace UnityEditor.AddressableAssets.GUI
 
         void OnHierSearchClick()
         {
-            ProjectConfigData.hierarchicalSearch = !ProjectConfigData.hierarchicalSearch;
+            ProjectConfigData.HierarchicalSearch = !ProjectConfigData.HierarchicalSearch;
             m_EntryTree.SwapSearchType();
             m_EntryTree.Reload();
             m_EntryTree.Repaint();
@@ -367,8 +443,8 @@ namespace UnityEditor.AddressableAssets.GUI
         {
             if (settings == null)
                 return false;
-				
-			if (!m_ModificationRegistered)
+
+            if (!m_ModificationRegistered)
             {
                 m_ModificationRegistered = true;
                 settings.OnModification -= OnSettingsModification; //just in case...
@@ -376,19 +452,7 @@ namespace UnityEditor.AddressableAssets.GUI
             }
 
             if (m_EntryTree == null)
-            {
-                if (m_TreeState == null)
-                    m_TreeState = new TreeViewState();
-
-                var headerState = AddressableAssetEntryTreeView.CreateDefaultMultiColumnHeaderState();
-                if (MultiColumnHeaderState.CanOverwriteSerializedFields(m_Mchs, headerState))
-                    MultiColumnHeaderState.OverwriteSerializedFields(m_Mchs, headerState);
-                m_Mchs = headerState;
-
-                m_SearchField = new SearchField();
-                m_EntryTree = new AddressableAssetEntryTreeView(m_TreeState, m_Mchs, this);
-                m_EntryTree.Reload();
-            }
+                InitialiseEntryTree();
 
             HandleVerticalResize(pos);
             var inRectY = pos.height;
@@ -398,6 +462,22 @@ namespace UnityEditor.AddressableAssets.GUI
             TopToolbar(searchRect);
             m_EntryTree.OnGUI(treeRect);
             return m_ResizingVerticalSplitter;
+        }
+
+        internal AddressableAssetEntryTreeView InitialiseEntryTree()
+        {
+            if (m_TreeState == null)
+                m_TreeState = new TreeViewState();
+
+            var headerState = AddressableAssetEntryTreeView.CreateDefaultMultiColumnHeaderState();
+            if (MultiColumnHeaderState.CanOverwriteSerializedFields(m_Mchs, headerState))
+                MultiColumnHeaderState.OverwriteSerializedFields(m_Mchs, headerState);
+            m_Mchs = headerState;
+
+            m_SearchField = new SearchField();
+            m_EntryTree = new AddressableAssetEntryTreeView(m_TreeState, m_Mchs, this);
+            m_EntryTree.Reload();
+            return m_EntryTree;
         }
 
         public void Reload()

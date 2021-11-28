@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using UnityEditor.AddressableAssets.Settings;
@@ -14,7 +14,7 @@ namespace UnityEditor.AddressableAssets.Build.DataBuilders
 	/// Build script used for player builds and running with bundles in the editor, allowing building of multiple catalogs.
 	/// </summary>
 	[CreateAssetMenu(fileName = "BuildScriptPackedMultipleCatalogs.asset", menuName = "Addressables/Content Builders/Multiple Catalogs")]
-	public class BuildScriptPackedMultipleCatalogs : BuildScriptPackedMode
+	public class BuildScriptPackedMultipleCatalogs : BuildScriptPackedMode, IMultipleCatalogsBuilder
 	{
 		/// <summary>
 		/// Move a file, deleting it first if it exists.

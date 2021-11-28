@@ -10,9 +10,10 @@ using UnityEngine.Serialization;
 
 namespace UnityEngine.ResourceManagement.ResourceProviders.Simulation
 {
-    class VBAsyncOperation
+    abstract class VBAsyncOperation
     {
-        public virtual DownloadStatus GetDownloadStatus() { return default; }
+        public abstract DownloadStatus GetDownloadStatus();
+        public abstract bool WaitForCompletion();
     }
 
     class VBAsyncOperation<TObject> : VBAsyncOperation
@@ -24,6 +25,9 @@ namespace UnityEngine.ResourceManagement.ResourceProviders.Simulation
 
         DelegateList<VBAsyncOperation<TObject>> m_CompletedAction;
         Action<VBAsyncOperation<TObject>> m_OnDestroyAction;
+
+        public override DownloadStatus GetDownloadStatus() => default;
+        public override bool WaitForCompletion() => true;
 
         public override string ToString()
         {
@@ -84,6 +88,7 @@ namespace UnityEngine.ResourceManagement.ResourceProviders.Simulation
             }
         }
 
+
         public virtual void SetResult(TObject result)
         {
             m_Result = result;
@@ -123,6 +128,8 @@ namespace UnityEngine.ResourceManagement.ResourceProviders.Simulation
         /// </summary>
         public long Size { get { return m_Size; } }
 
+        [SerializeField]
+        internal string m_AssetPath;
         /// <summary>
         /// Construct a new VirtualAssetBundleEntry
         /// </summary>
@@ -204,6 +211,7 @@ namespace UnityEngine.ResourceManagement.ResourceProviders.Simulation
                 return (float)(m_HeaderBytesLoaded + m_DataBytesLoaded) / (m_HeaderSize + m_DataSize);
             }
         }
+
         /// <summary>
         /// Construct a new VirtualAssetBundle
         /// </summary>
@@ -260,6 +268,13 @@ namespace UnityEngine.ResourceManagement.ResourceProviders.Simulation
                 m_TimeInLoadingState = 0.0f;
             }
 
+            public override bool WaitForCompletion()
+            {
+                SetResult(m_Bundle);
+                InvokeCompletionEvent();
+                return true;
+            }
+
             public override DownloadStatus GetDownloadStatus()
             {
                 if (m_Bundle.m_IsLocal)
@@ -279,6 +294,9 @@ namespace UnityEngine.ResourceManagement.ResourceProviders.Simulation
 
             public void Update(long localBandwidth, long remoteBandwidth, float unscaledDeltaTime)
             {
+                if (m_Result != null)
+                    return;
+
                 if (!m_crcHashValidated)
                 {
                     var location = Context as IResourceLocation;
@@ -428,7 +446,7 @@ namespace UnityEngine.ResourceManagement.ResourceProviders.Simulation
 
         interface IVirtualLoadable
         {
-            bool Load(long localBandwidth, long remoteBandwidth);
+            bool Load(long localBandwidth, long remoteBandwidth, float unscaledDeltaTime);
         }
 
         // TODO: This is only needed internally. We can change this to not derive off of AsyncOperationBase and simplify the code
@@ -446,20 +464,34 @@ namespace UnityEngine.ResourceManagement.ResourceProviders.Simulation
                 m_LastUpdateTime = Time.realtimeSinceStartup;
             }
 
-            public override float PercentComplete { get { return Mathf.Clamp01(m_BytesLoaded / (float)m_AssetInfo.Size); } }
-            public bool Load(long localBandwidth, long remoteBandwidth)
+            public override bool WaitForCompletion()
             {
-                if (Time.unscaledTime > m_LastUpdateTime)
+                //TODO: this needs to just wait on the resourcemanager update loop to ensure proper loading order
+                while (!IsDone)
                 {
-                    m_BytesLoaded += (long)Math.Ceiling((Time.unscaledTime - m_LastUpdateTime) * localBandwidth);
-                    m_LastUpdateTime = Time.unscaledDeltaTime;
+                    Load(10000, 100000, .1f);
+                    System.Threading.Thread.Sleep(100);
+                }
+                return true;
+            }
+
+            public override float PercentComplete { get { return Mathf.Clamp01(m_BytesLoaded / (float)m_AssetInfo.Size); } }
+            public bool Load(long localBandwidth, long remoteBandwidth, float unscaledDeltaTime)
+            {
+                if (IsDone)
+                    return false;
+                var now = m_LastUpdateTime + unscaledDeltaTime;
+                if (now > m_LastUpdateTime)
+                {
+                    m_BytesLoaded += (long)Math.Ceiling((now - m_LastUpdateTime) * localBandwidth);
+                    m_LastUpdateTime = now;
                 }
                 if (m_BytesLoaded < m_AssetInfo.Size)
                     return true;
                 if (!(Context is IResourceLocation))
                     return false;
                 var location = Context as IResourceLocation;
-                var assetPath = m_provideHandle.ResourceManager.TransformInternalId(location);
+                var assetPath = m_AssetInfo.m_AssetPath;
                 object result = null;
 
                 var pt = m_provideHandle.Type;
@@ -469,26 +501,10 @@ namespace UnityEngine.ResourceManagement.ResourceProviders.Simulation
                     result = ResourceManagerConfig.CreateListResult(pt, AssetDatabaseProvider.LoadAssetsWithSubAssets(assetPath));
                 else
                 {
-                    if (ResourceManagerConfig.ExtractKeyAndSubKey(assetPath, out string mainPath, out string subKey))
-                    {
-                        var objs = AssetDatabase.LoadAllAssetRepresentationsAtPath(mainPath);
-                        foreach (var o in objs)
-                        {
-                            if (o.name == subKey)
-                            {
-                                if (pt.IsAssignableFrom(o.GetType()))
-                                {
-                                    result = o;
-                                    break;
-                                }
-                            }
-                        }
-                    }
+                    if (ResourceManagerConfig.ExtractKeyAndSubKey(location.InternalId, out string mainPath, out string subKey))
+                        result = AssetDatabaseProvider.LoadAssetSubObject(assetPath, subKey, pt);
                     else
-                    {
-                        var obj = AssetDatabase.LoadAssetAtPath(assetPath, location.ResourceType);
-                        result = obj != null && pt.IsAssignableFrom(obj.GetType()) ? obj : null;
-                    }
+                        result = AssetDatabaseProvider.LoadAssetAtPath(assetPath, m_provideHandle);
                 }
                 SetResult(result);
                 InvokeCompletionEvent();
@@ -510,7 +526,7 @@ namespace UnityEngine.ResourceManagement.ResourceProviders.Simulation
 
             foreach (var o in m_AssetLoadOperations)
             {
-                if (!o.Load(localBandwidth, remoteBandwidth))
+                if (!o.Load(localBandwidth, remoteBandwidth, unscaledDeltaTime))
                 {
                     m_AssetLoadOperations.Remove(o);
                     break;

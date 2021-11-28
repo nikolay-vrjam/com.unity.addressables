@@ -54,11 +54,8 @@ namespace UnityEngine.ResourceManagement.Tests
                 if (!Directory.Exists(Path.GetDirectoryName(assetPath)))
                     Directory.CreateDirectory(Path.GetDirectoryName(assetPath));
 
-#if UNITY_2018_3_OR_NEWER
                 PrefabUtility.SaveAsPrefabAsset(go, assetPath);
-#else
-                PrefabUtility.CreatePrefab(assetPath, go);
-#endif
+     
                 Object.DestroyImmediate(go, false);
             }
 
@@ -157,13 +154,16 @@ namespace UnityEngine.ResourceManagement.Tests
             public GameObject result;
             public bool done = false;
             public AsyncOperationHandle<GameObject> operation;
+            public bool addCompletedCallback;
+            public bool callbackDone = false;
             async void Start()
             {
                 operation = resourceManager.ProvideResource<GameObject>(location);
+                if (addCompletedCallback)
+                    operation.Completed += handle => { callbackDone = true; };
+
                 await operation.Task;
                 result = operation.Result;
-                await operation.Task;
-                await operation.Task;
                 done = true;
             }
         }
@@ -183,6 +183,29 @@ namespace UnityEngine.ResourceManagement.Tests
             Assert.IsNotNull(comp.result);
             Assert.True(comp.operation.PercentComplete == 1 && comp.operation.IsDone);
             Assert.True(comp.operation.Task.IsCompleted);
+
+            // Cleanup
+            comp.operation.Release();
+            GameObject.Destroy(go);
+        }
+        
+        [UnityTest]
+        public IEnumerator WhenAsyncOperationIsDone_TasksAndCallbackIsCompleted()
+        {
+            // Setup
+            var go = new GameObject("test", typeof(AsyncAwaitMultipleComponent));
+            var comp = go.GetComponent<AsyncAwaitMultipleComponent>();
+            comp.resourceManager = m_ResourceManager;
+            comp.location = m_Locations[0];
+            comp.addCompletedCallback = true;
+
+            // Test
+            while (!comp.done)
+                yield return null;
+            Assert.IsNotNull(comp.result);
+            Assert.True(comp.operation.PercentComplete == 1 && comp.operation.IsDone);
+            Assert.True(comp.operation.Task.IsCompleted, "Task has not completed before component was done");
+            Assert.True(comp.callbackDone, "Callback had not completed before component was done");
 
             // Cleanup
             comp.operation.Release();

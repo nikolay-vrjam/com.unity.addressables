@@ -21,26 +21,6 @@ namespace UnityEngine.ResourceManagement.ResourceProviders.Simulation
             var id = resourceManager == null ? location.InternalId : resourceManager.TransformInternalId(location);
             if (!ResourceManagerConfig.IsPathRemote(id))
                 return 0;
-
-            var locHash = Hash128.Parse(Hash);
-            if (!locHash.isValid)
-                return BundleSize;
-
-#if ENABLE_CACHING
-            if (locHash.isValid) //If we have a hash, ensure that our desired version is cached.
-            {
-                if (Caching.IsVersionCached(BundleName, locHash))
-                    return 0;
-                return BundleSize;
-            }
-            else //If we don't have a hash, any cached version will do.
-            {
-                List<Hash128> versions = new List<Hash128>();
-                Caching.GetCachedVersions(BundleName, versions);
-                if (versions.Count > 0)
-                    return 0;
-            }
-#endif //ENABLE_CACHING
             return BundleSize;
         }
     }
@@ -67,8 +47,14 @@ namespace UnityEngine.ResourceManagement.ResourceProviders.Simulation
             public void Start(ProvideHandle provideHandle, VirtualAssetBundle bundle)
             {
                 m_PI = provideHandle;
+                provideHandle.SetWaitForCompletionCallback(WaitForCompletionHandler);
                 m_RequestOperation = bundle.LoadAssetAsync(m_PI, m_PI.Location);
                 m_RequestOperation.Completed += RequestOperation_Completed;
+            }
+
+            private bool WaitForCompletionHandler()
+            {
+                return m_RequestOperation.WaitForCompletion();
             }
 
             private void RequestOperation_Completed(VBAsyncOperation<object> obj)

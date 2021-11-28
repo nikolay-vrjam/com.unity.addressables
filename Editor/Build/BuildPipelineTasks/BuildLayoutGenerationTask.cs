@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Runtime.Serialization.Formatters.Binary;
 using UnityEditor.AddressableAssets.Build.DataBuilders;
 using UnityEditor.AddressableAssets.Build.Layout;
 using UnityEditor.AddressableAssets.Settings;
@@ -11,10 +10,14 @@ using UnityEditor.Build.Content;
 using UnityEditor.Build.Pipeline;
 using UnityEditor.Build.Pipeline.Injector;
 using UnityEditor.Build.Pipeline.Interfaces;
+using UnityEngine.AddressableAssets;
 
 namespace UnityEditor.AddressableAssets.Build.BuildPipelineTasks
 {
-    internal class BuildLayoutGenerationTask : IBuildTask
+    /// <summary>
+    /// The BuildTask used to generate the bundle layout.
+    /// </summary>
+    public class BuildLayoutGenerationTask : IBuildTask
     {
         const int k_Version = 1;
 
@@ -24,6 +27,11 @@ namespace UnityEditor.AddressableAssets.Build.BuildPipelineTasks
         /// The GenerateLocationListsTask version.
         /// </summary>
         public int Version { get { return k_Version; } }
+
+        /// <summary>
+        /// The mapping of the old to new bundle names. 
+        /// </summary>
+        public Dictionary<string, string> BundleNameRemap { get { return m_BundleNameRemap; } set { m_BundleNameRemap = value; }}
 
 #pragma warning disable 649
         [InjectContext(ContextUsage.In)]
@@ -50,7 +58,7 @@ namespace UnityEditor.AddressableAssets.Build.BuildPipelineTasks
 
         internal Dictionary<string, string> m_BundleNameRemap;
 
-        internal const string kLayoutTextFile = "Library/com.unity.addressables/buildlayout.txt";
+        internal static string m_LayoutTextFile = Addressables.LibraryPath + "/buildlayout.txt";
 
         static AssetBucket GetOrCreate(Dictionary<string, AssetBucket> buckets, string asset)
         {
@@ -82,9 +90,7 @@ namespace UnityEditor.AddressableAssets.Build.BuildPipelineTasks
             {
                 BuildLayout.Bundle bundle = new BuildLayout.Bundle();
                 bundle.Name = bundleName;
-                string path = m_Parameters.GetOutputFilePathForIdentifier(bundle.Name);
                 UnityEngine.BuildCompression compression = m_Parameters.GetCompressionForIdentifier(bundle.Name);
-                bundle.FileSize = (ulong)new FileInfo(path).Length;
                 bundle.Compression = compression.compression.ToString();
                 lookup.Bundles.Add(bundle.Name, bundle);
             }
@@ -241,7 +247,8 @@ namespace UnityEditor.AddressableAssets.Build.BuildPipelineTasks
                 AddressableAssetsBuildContext aaContext = (AddressableAssetsBuildContext)m_AaBuildContext;
                 // Map from GUID to AddrssableAssetEntry
                 Dictionary<string, AddressableAssetEntry> guidToEntry = aaContext.assetEntries.ToDictionary(x => x.guid, x => x);
-
+                Dictionary<string, string> groupNameToBuildPath = new Dictionary<string, string>();
+                
                 // create groups
                 foreach (AddressableAssetGroup group in aaContext.Settings.groups)
                 {
@@ -260,6 +267,7 @@ namespace UnityEditor.AddressableAssets.Build.BuildPipelineTasks
                         {
                             sd.KvpDetails.Add(new Tuple<string, string>("PackingMode", bSchema.BundleMode.ToString()));
                             sd.KvpDetails.Add(new Tuple<string, string>("Compression", bSchema.Compression.ToString()));
+                            groupNameToBuildPath[group.name] = bSchema.BuildPath.GetValue(aaContext.Settings);
                         }
                         grp.Schemas.Add(sd);
                     }
@@ -277,20 +285,37 @@ namespace UnityEditor.AddressableAssets.Build.BuildPipelineTasks
                         b.ExpandedDependencies = deps2.Select(x => lookup.Bundles[x]).Where(x => b != x).ToList();
 
                     if (aaContext.bundleToAssetGroup.TryGetValue(b.Name, out string grpName))
-                        lookup.GroupLookup[grpName].Bundles.Add(b);
+                    {
+                        var assetGroup = lookup.GroupLookup[grpName];
+                        b.Name = m_BundleNameRemap[b.Name];
+                        b.FileSize = (ulong)new FileInfo(Path.Combine(groupNameToBuildPath[assetGroup.Name], b.Name)).Length;
+                        assetGroup.Bundles.Add(b);
+                    }
                     else
+                    {
+                        // will still be associated with a group and can be found in assetGroupToBundles
+                        foreach (KeyValuePair<AddressableAssetGroup,List<string>> pair in aaContext.assetGroupToBundles)
+                        {
+                            foreach (string s in pair.Value)
+                            {
+                                if (s == b.Name)
+                                {
+                                    b.Name = m_BundleNameRemap[b.Name];
+                                    b.FileSize = (ulong)new FileInfo(Path.Combine(groupNameToBuildPath[pair.Key.Name], b.Name)).Length;
+                                    break;
+                                }
+                            }
+                            if (b.FileSize > 0)
+                                break;
+                        }
                         layout.BuiltInBundles.Add(b);
+                    }
                 }
 
                 // Apply the addressable name to the asset
                 foreach (BuildLayout.ExplicitAsset a in BuildLayoutHelpers.EnumerateAssets(layout))
                     if (guidToEntry.TryGetValue(a.Guid, out AddressableAssetEntry entry))
                         a.AddressableName = entry.address;
-
-                // The addressables build script can rename the bundles
-                foreach (BuildLayout.Bundle b in BuildLayoutHelpers.EnumerateBundles(layout))
-                    if (m_BundleNameRemap.TryGetValue(b.Name, out string newName))
-                        b.Name = newName;
             }
 
             return layout;
@@ -304,11 +329,11 @@ namespace UnityEditor.AddressableAssets.Build.BuildPipelineTasks
         {
             BuildLayout layout = CreateBuildLayout();
 
-            Directory.CreateDirectory(Path.GetDirectoryName(kLayoutTextFile));
-            using (FileStream s = File.Open(kLayoutTextFile, FileMode.Create))
+            Directory.CreateDirectory(Path.GetDirectoryName(m_LayoutTextFile));
+            using (FileStream s = File.Open(m_LayoutTextFile, FileMode.Create))
                 BuildLayoutPrinter.WriteBundleLayout(s, layout);
 
-            UnityEngine.Debug.Log($"Build layout written to {kLayoutTextFile}");
+            UnityEngine.Debug.Log($"Build layout written to {m_LayoutTextFile}");
 
             s_LayoutCompleteCallback?.Invoke(layout);
 
