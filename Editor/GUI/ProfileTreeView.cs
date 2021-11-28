@@ -12,7 +12,12 @@ namespace UnityEditor.AddressableAssets.GUI
         private List<string> m_Names;
         private Dictionary<int, AddressableAssetProfileSettings.BuildProfile> m_TreeIndexToBuildProfileMap;
         public List<string> Names => m_Names;
-
+        private int m_LastClickedProfile;
+        public int lastClickedProfile
+        {
+            get { return m_LastClickedProfile; }
+            set { m_LastClickedProfile = value; }
+        }
 
         private ProfileWindow m_Window;
 
@@ -72,7 +77,11 @@ namespace UnityEditor.AddressableAssets.GUI
             Reload();
 
             if (m_Window.ProfileIndex >= 0)
+            {
                 SetSelection(new List<int> { m_Window.ProfileIndex });
+                m_LastClickedProfile = m_Window.ProfileIndex;
+            }
+
         }
 
         protected override TreeViewItem BuildRoot()
@@ -155,6 +164,7 @@ namespace UnityEditor.AddressableAssets.GUI
         protected override void SingleClickedItem(int id)
         {
             List<TreeViewItem> selectedNodes = GetSelectedNodes();
+            m_LastClickedProfile = m_Window.ProfileIndex;
             m_Window.ProfileIndex = selectedNodes[0].id;
         }
 
@@ -197,7 +207,7 @@ namespace UnityEditor.AddressableAssets.GUI
 
         protected override bool CanRename(TreeViewItem item)
         {
-            return true;
+            return item.displayName != "Default";
         }
 
         protected void RenameProfile(object context)
@@ -212,6 +222,9 @@ namespace UnityEditor.AddressableAssets.GUI
 
         protected override void RenameEnded(RenameEndedArgs args)
         {
+            if (!args.acceptedRename)
+                return;
+            
             var item = FindItemInVisibleRows(args.itemID);
 
             AddressableAssetProfileSettings.BuildProfile profile = GetProfile(item.id);

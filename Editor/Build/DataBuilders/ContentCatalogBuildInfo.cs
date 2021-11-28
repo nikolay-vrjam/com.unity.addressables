@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using UnityEngine.AddressableAssets.ResourceLocators;
 
 namespace UnityEditor.AddressableAssets.Build.DataBuilders
@@ -10,14 +10,14 @@ namespace UnityEditor.AddressableAssets.Build.DataBuilders
     {
         /// <summary>
         /// The catalog identifier.
-        /// 
+        ///
         /// Note that "AddressablesMainContentCatalog" is used for the default main catalog.
         /// </summary>
         public readonly string Identifier;
 
         /// <summary>
         /// The filename of the JSON file to contain the catalog data.
-        /// 
+        ///
         /// Note that the default main catalog is written to "catalog.json"
         /// </summary>
         public readonly string JsonFilename;
@@ -29,7 +29,7 @@ namespace UnityEditor.AddressableAssets.Build.DataBuilders
 
         /// <summary>
         /// Determines whether the catalog is going to be registered in settings.json.
-        /// 
+        ///
         /// Registered catalogs are automatically loaded on application startup.
         /// Use "false" for catalogs that are to be loaded dynamicaly.
         /// </summary>

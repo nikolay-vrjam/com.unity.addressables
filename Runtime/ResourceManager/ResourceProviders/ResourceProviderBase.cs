@@ -100,6 +100,15 @@ namespace UnityEngine.ResourceManagement.ResourceProviders
                 m_CallBack = callback;
             }
 
+            ///<inheritdoc />
+            protected  override bool InvokeWaitForCompletion()
+            {
+                m_RM?.Update(Time.unscaledDeltaTime);
+                if (!HasExecuted)
+                    InvokeExecute();
+                return true;
+            }
+
             protected override void Execute()
             {
                 if (m_CallBack != null)
@@ -107,6 +116,44 @@ namespace UnityEngine.ResourceManagement.ResourceProviders
                 else
                     Complete(true, true, "");
             }
+        }
+    }
+
+    /// <summary>
+    /// Contains options used in Resource Provider load requests.  ProviderLoadRequestOptions are used to specify
+    /// parameters such as whether or not to ignore load failures and UnityWebRequest timeouts.
+    /// </summary>
+    [Serializable]
+    public class ProviderLoadRequestOptions
+    {
+        [SerializeField] private bool m_IgnoreFailures = false;
+        private int m_WebRequestTimeout = 0;
+
+        /// <summary>
+        /// Creates a memberwise clone of a given ProviderLoadRequestOption.
+        /// </summary>
+        /// <returns>The newly created ProviderLoadRequestOption object</returns>
+        public ProviderLoadRequestOptions Copy()
+        {
+            return (ProviderLoadRequestOptions) this.MemberwiseClone();
+        }
+
+        /// <summary>
+        /// IgnoreFailures for provider load requests
+        /// </summary>
+        public bool IgnoreFailures
+        {
+            get { return m_IgnoreFailures; }
+            set { m_IgnoreFailures = value; }
+        }
+
+        /// <summary>
+        /// UnityWebRequest Timeout
+        /// </summary>
+        public int WebRequestTimeout
+        {
+            get => m_WebRequestTimeout;
+            set => m_WebRequestTimeout = value;
         }
     }
 }

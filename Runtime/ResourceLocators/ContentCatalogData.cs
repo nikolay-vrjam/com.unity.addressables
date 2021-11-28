@@ -338,7 +338,7 @@ namespace UnityEngine.AddressableAssets.ResourceLocators
 
             return locator;
         }
-
+        
         internal static string ExpandInternalId(string[] internalIdPrefixes, string v)
         {
             if (internalIdPrefixes == null || internalIdPrefixes.Length == 0)
@@ -352,7 +352,7 @@ namespace UnityEngine.AddressableAssets.ResourceLocators
                 return v;
             return internalIdPrefixes[index] + v.Substring(nextHash + 1);
         }
-
+        
         /// <summary>
         /// Create a new ContentCatalogData object without any data.
         /// </summary>
@@ -372,7 +372,11 @@ namespace UnityEngine.AddressableAssets.ResourceLocators
             SetData(entries, false);
         }
 
-        internal ContentCatalogData(string id)
+        /// <summary>
+        /// Creates a new ContentCatalogData object with the specified locator id.
+        /// </summary>
+        /// <param name="id">The id of the locator.</param>
+        public ContentCatalogData(string id)
         {
             m_LocatorId = id;
         }
@@ -441,15 +445,20 @@ namespace UnityEngine.AddressableAssets.ResourceLocators
         }
 
         /// <summary>
-        /// Set the data before serialization
+        /// Sets the catalog data before serialization.
         /// </summary>
-        /// <param name="data">The list of </param>
+        /// <param name="data">The list of catalog entries.</param>
         public void SetData(IList<ContentCatalogDataEntry> data)
         {
             SetData(data, false);
         }
-
-        internal void SetData(IList<ContentCatalogDataEntry> data, bool optimizeSize)
+        
+        /// <summary>
+        /// Sets the catalog data before serialization.
+        /// </summary>
+        /// <param name="data">The list of catalog entries.</param>
+        /// <param name="optimizeSize">Whether to optimize the catalog size by extracting common internal id prefixes.</param>
+        public void SetData(IList<ContentCatalogDataEntry> data, bool optimizeSize)
         {
             if (data == null)
                 return;
@@ -461,7 +470,7 @@ namespace UnityEngine.AddressableAssets.ResourceLocators
             keys.Add(data.SelectMany(s => s.Dependencies));
             var keyIndexToEntries = new KeyIndexer<List<ContentCatalogDataEntry>, object>(keys.values, s => new List<ContentCatalogDataEntry>(), keys.values.Count);
             var entryToIndex = new Dictionary<ContentCatalogDataEntry, int>(data.Count);
-            var extraDataList = new List<byte>(8 * 1024);
+            var extraDataList = new List<byte>(8*1024);
             var entryIndexToExtraDataIndex = new Dictionary<int, int>();
 
             int extraDataIndex = 0;
@@ -502,23 +511,10 @@ namespace UnityEngine.AddressableAssets.ResourceLocators
                 if (isNew)
                 {
                     //if this combination of dependecies is new, add a new entry and add its key to all contained entries
-                    var deps = new List<ContentCatalogDataEntry>(entry.Dependencies.Count);
-                    foreach (var d in entry.Dependencies)
-                    {
-                        try
-                        {
-                            deps.Add(keyIndexToEntries[d][0]);
-                        }
-                        catch (ArgumentOutOfRangeException)
-                        {
-                            Debug.LogWarning("dependency of addressable asset " + entry.Keys[0] + " could not be resolved within this catalog: " + d);
-                        }
-                    }
-
+                    var deps = entry.Dependencies.Select(d => keyIndexToEntries[d][0]).ToList();
                     keyIndexToEntries.Add(hashCode, deps);
                     foreach (var dep in deps)
                         dep.Keys.Add(hashCode);
-
                 }
 
                 //reset the dependency list to only contain the key of the new set

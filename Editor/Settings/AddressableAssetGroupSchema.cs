@@ -12,9 +12,7 @@ namespace UnityEditor.AddressableAssets.Settings
     /// </summary>
     public class AddressableAssetGroupSchema : ScriptableObject
     {
-        [FormerlySerializedAs("m_group")]
-        [HideInInspector]
-        [SerializeField]
+        [FormerlySerializedAs("m_group")] [HideInInspector] [SerializeField]
         AddressableAssetGroup m_Group;
 
         /// <summary>
@@ -22,15 +20,15 @@ namespace UnityEditor.AddressableAssets.Settings
         /// </summary>
         public AddressableAssetGroup Group
         {
-            get
-            {
-                return m_Group;
-            }
+            get { return m_Group; }
             internal set
             {
                 m_Group = value;
                 if (m_Group != null)
+                {
                     OnSetGroup(m_Group);
+                    Validate();
+                }
             }
         }
 
@@ -42,6 +40,11 @@ namespace UnityEditor.AddressableAssets.Settings
         {
         }
 
+        internal virtual void Validate()
+        {
+            
+        }
+        
         /// <summary>
         /// Used to display the GUI of the schema.
         /// </summary>
@@ -81,6 +84,7 @@ namespace UnityEditor.AddressableAssets.Settings
                     EditorUtility.SetDirty(this);
                     AddressableAssetUtility.OpenAssetIfUsingVCIntegration(this);
                 }
+
                 if (m_Group != null)
                     m_Group.SetDirty(AddressableAssetSettings.ModificationEvent.GroupSchemaModified, this, postEvent, false);
             }
@@ -105,10 +109,10 @@ namespace UnityEditor.AddressableAssets.Settings
             foreach (var schema in otherSchemas)
             {
                 var s_prop = (new SerializedObject(schema)).FindProperty(propertyName);
-                if ((type == typeof(Enum) && (property.enumValueIndex != s_prop.enumValueIndex)) ||
-                    (type == typeof(string) && (property.stringValue != s_prop.stringValue)) ||
-                    (type == typeof(int) && (property.intValue != s_prop.intValue)) ||
-                    (type == typeof(bool) && (property.boolValue != s_prop.boolValue)))
+                if ((property.propertyType == SerializedPropertyType.Enum && (property.enumValueIndex != s_prop.enumValueIndex)) ||
+                    (property.propertyType == SerializedPropertyType.String && (property.stringValue != s_prop.stringValue)) ||
+                    (property.propertyType == SerializedPropertyType.Integer && (property.intValue != s_prop.intValue)) ||
+                    (property.propertyType == SerializedPropertyType.Boolean && (property.boolValue != s_prop.boolValue)))
                 {
                     EditorGUI.showMixedValue = true;
                     return;
@@ -116,7 +120,9 @@ namespace UnityEditor.AddressableAssets.Settings
 
                 if (type == typeof(ProfileValueReference))
                 {
-                    var field = property.serializedObject.targetObject.GetType().GetField(property.name, BindingFlags.NonPublic | BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly);
+                    var field = property.serializedObject.targetObject.GetType().GetField(property.name,
+                        BindingFlags.NonPublic | BindingFlags.Public | BindingFlags.Instance |
+                        BindingFlags.DeclaredOnly);
 
                     string lhsId = (field?.GetValue(property.serializedObject.targetObject) as ProfileValueReference)?.Id;
                     string rhsId = (field?.GetValue(s_prop.serializedObject.targetObject) as ProfileValueReference)?.Id;
@@ -130,7 +136,9 @@ namespace UnityEditor.AddressableAssets.Settings
 
                 if (type == typeof(SerializedType))
                 {
-                    var field = property.serializedObject.targetObject.GetType().GetField(property.name, BindingFlags.NonPublic | BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly);
+                    var field = property.serializedObject.targetObject.GetType().GetField(property.name,
+                        BindingFlags.NonPublic | BindingFlags.Public | BindingFlags.Instance |
+                        BindingFlags.DeclaredOnly);
 
                     Type lhs = ((SerializedType)field?.GetValue(property.serializedObject.targetObject)).Value;
                     Type rhs = ((SerializedType)field?.GetValue(s_prop.serializedObject.targetObject)).Value;
