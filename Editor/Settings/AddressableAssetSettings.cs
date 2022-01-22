@@ -1364,6 +1364,8 @@ namespace UnityEditor.AddressableAssets.Settings
 				m_DataBuilders.Add(CreateScriptAsset<BuildScriptPackedPlayMode>());
 				m_DataBuilders.Add(CreateScriptAsset<BuildScriptPackedMode>());
 				m_DataBuilders.Add(CreateScriptAsset<BuildScriptPackedMultiCatalogMode>());
+
+				m_ActivePlayerDataBuilderIndex = 4;
 			}
 
 			if (ActivePlayerDataBuilder != null && !ActivePlayerDataBuilder.CanBuildData<AddressablesPlayerBuildResult>())

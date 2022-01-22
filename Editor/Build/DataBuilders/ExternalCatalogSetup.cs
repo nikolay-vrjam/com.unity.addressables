@@ -8,10 +8,10 @@ using UnityEngine.ResourceManagement.ResourceProviders;
 namespace UnityEditor.AddressableAssets.Build.DataBuilders
 {
 	/// <summary>
-	/// Separate catalog for assigned asset groups.
+	/// Separate catalog for the assigned asset groups.
 	/// </summary>
-	[CreateAssetMenu(menuName = "Addressables/new Catalog Content Group", fileName = "NewContentCatalogGroup")]
-	public class ContentCatalogGroup : ScriptableObject
+	[CreateAssetMenu(menuName = "Addressables/new External Catalog", fileName = "newExternalCatalogSetup")]
+	public class ExternalCatalogSetup : ScriptableObject
 	{
 		[SerializeField, Tooltip("Assets groups that belong to this catalog. Entries found in these will get extracted from the default catalog.")]
 		private List<AddressableAssetGroup> assetGroups = new List<AddressableAssetGroup>();
@@ -19,7 +19,7 @@ namespace UnityEditor.AddressableAssets.Build.DataBuilders
 		private string buildPath = string.Empty;
 		[SerializeField, Tooltip("Runtime load path for assets associated with this catalog.")]
 		private string runtimeLoadPath = string.Empty;
-		[SerializeField, Tooltip("Catalog name.")]
+		[SerializeField, Tooltip("Catalog name. This will also be the name of the exported catalog file.")]
 		private string catalogName = string.Empty;
 
 		public string CatalogName
