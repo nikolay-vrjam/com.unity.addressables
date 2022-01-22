@@ -1,10 +1,12 @@
 ﻿using System.Collections.Generic;
-using UnityEngine;
 
-public interface IMultipleCatalogsBuilder
+namespace UnityEditor.AddressableAssets.Build.DataBuilders
 {
-	List<CatalogContentGroup> AdditionalCatalogs
+	public interface IMultipleCatalogsBuilder
 	{
-		get; set;
+		List<ContentCatalogGroup> AdditionalCatalogs
+		{
+			get; set;
+		}
 	}
 }

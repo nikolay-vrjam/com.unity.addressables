@@ -13,8 +13,8 @@ namespace UnityEditor.AddressableAssets.Build.DataBuilders
 	/// <summary>
 	/// Build script used for player builds and running with bundles in the editor, allowing building of multiple catalogs.
 	/// </summary>
-	[CreateAssetMenu(fileName = "BuildScriptPackedMultipleCatalogs.asset", menuName = "Addressables/Content Builders/Multiple Catalogs")]
-	public class BuildScriptPackedMultipleCatalogs : BuildScriptPackedMode, IMultipleCatalogsBuilder
+	[CreateAssetMenu(fileName = "BuildScriptPackedMultiCatalog.asset", menuName = "Addressables/Content Builders/Multi-Catalog")]
+	public class BuildScriptPackedMultiCatalogMode : BuildScriptPackedMode, IMultipleCatalogsBuilder
 	{
 		/// <summary>
 		/// Move a file, deleting it first if it exists.
@@ -31,16 +31,16 @@ namespace UnityEditor.AddressableAssets.Build.DataBuilders
 		}
 
 		[SerializeField]
-		private List<CatalogContentGroup> additionalCatalogs = new List<CatalogContentGroup>();
+		private List<ContentCatalogGroup> additionalCatalogs = new List<ContentCatalogGroup>();
 
 		private readonly List<CatalogSetup> catalogSetups = new List<CatalogSetup>();
 
 		public override string Name
 		{
-			get { return base.Name + " - Multiple Catalogs"; }
+			get { return base.Name + " - Multi-Catalog"; }
 		}
 
-		public List<CatalogContentGroup> AdditionalCatalogs
+		public List<ContentCatalogGroup> AdditionalCatalogs
 		{
 			get { return additionalCatalogs; }
 			set { additionalCatalogs = value; }
@@ -53,7 +53,7 @@ namespace UnityEditor.AddressableAssets.Build.DataBuilders
 
 			// Prepare catalogs
 			var defaultCatalog = new ContentCatalogBuildInfo(ResourceManagerRuntimeData.kCatalogAddress, builderInput.RuntimeCatalogFilename);
-			foreach (CatalogContentGroup catalogContentGroup in additionalCatalogs)
+			foreach (ContentCatalogGroup catalogContentGroup in additionalCatalogs)
 			{
 				if (catalogContentGroup != null)
 				{
@@ -176,7 +176,7 @@ namespace UnityEditor.AddressableAssets.Build.DataBuilders
 
 			// Cleanup the additional catalogs
 			AddressableAssetSettings settings = AddressableAssetSettingsDefaultObject.Settings;
-			foreach (CatalogContentGroup additionalCatalog in additionalCatalogs)
+			foreach (ContentCatalogGroup additionalCatalog in additionalCatalogs)
 			{
 				string buildPath = settings.profileSettings.EvaluateString(settings.activeProfileId, additionalCatalog.BuildPath);
 				if (!Directory.Exists(buildPath))
@@ -195,7 +195,7 @@ namespace UnityEditor.AddressableAssets.Build.DataBuilders
 
 		private class CatalogSetup
 		{
-			public readonly CatalogContentGroup CatalogContentGroup = null;
+			public readonly ContentCatalogGroup CatalogContentGroup = null;
 
 			/// <summary>
 			/// The catalog build info.
@@ -215,7 +215,7 @@ namespace UnityEditor.AddressableAssets.Build.DataBuilders
 				get { return BuildInfo.Locations.Count == 0; }
 			}
 
-			public CatalogSetup(CatalogContentGroup buildCatalog)
+			public CatalogSetup(ContentCatalogGroup buildCatalog)
 			{
 				this.CatalogContentGroup = buildCatalog;
 				BuildInfo = new ContentCatalogBuildInfo(buildCatalog.CatalogName, buildCatalog.CatalogName + ".json");
