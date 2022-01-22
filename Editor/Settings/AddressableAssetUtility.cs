@@ -1,8 +1,14 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.IO;
+using System.Linq;
 using System.Reflection;
+using System.Threading;
+using System.Security.Cryptography;
+using System.Text;
+using System.Threading.Tasks;
 using UnityEditor.AddressableAssets.Settings.GroupSchemas;
 using UnityEditor.Build.Utilities;
 using UnityEditor.PackageManager;
@@ -21,9 +27,8 @@ namespace UnityEditor.AddressableAssets.Settings
             return path.Replace('\\', '/').ToLower().Contains("/resources/");
         }
 
-        internal static bool GetPathAndGUIDFromTarget(Object target, out string path, out string guid, out Type mainAssetType)
+        internal static bool TryGetPathAndGUIDFromTarget(Object target, out string path, out string guid)
         {
-            mainAssetType = null;
             guid = string.Empty;
             path = string.Empty;
             if (target == null)
@@ -31,45 +36,44 @@ namespace UnityEditor.AddressableAssets.Settings
             path = AssetDatabase.GetAssetOrScenePath(target);
             if (!IsPathValidForEntry(path))
                 return false;
-            guid = AssetDatabase.AssetPathToGUID(path);
-            if (string.IsNullOrEmpty(guid))
-                return false;
-            mainAssetType = AssetDatabase.GetMainAssetTypeAtPath(path);
-            if (mainAssetType == null)
-                return false;
-            if (mainAssetType != target.GetType() && !typeof(AssetImporter).IsAssignableFrom(target.GetType()))
+            if (!AssetDatabase.TryGetGUIDAndLocalFileIdentifier(target, out guid, out long id))
                 return false;
             return true;
         }
-        static HashSet<string> excludedExtensions = new HashSet<string>(new string[] { ".cs", ".js", ".boo", ".exe", ".dll", ".meta" });
+
+        static HashSet<string> excludedExtensions = new HashSet<string>(new string[] { ".cs", ".js", ".boo", ".exe", ".dll", ".meta", ".preset", ".asmdef" });
         internal static bool IsPathValidForEntry(string path)
         {
             if (string.IsNullOrEmpty(path))
                 return false;
+            path = path.Replace('\\', Path.DirectorySeparatorChar).Replace('/', Path.DirectorySeparatorChar);
             if (!path.StartsWith("assets", StringComparison.OrdinalIgnoreCase) && !IsPathValidPackageAsset(path))
                 return false;
             if (path == CommonStrings.UnityEditorResourcePath ||
                 path == CommonStrings.UnityDefaultResourcePath ||
                 path == CommonStrings.UnityBuiltInExtraPath)
                 return false;
+            if (path.EndsWith($"{Path.DirectorySeparatorChar}Editor") || path.Contains($"{Path.DirectorySeparatorChar}Editor{Path.DirectorySeparatorChar}") 
+                || path.EndsWith("/Editor") || path.Contains("/Editor/"))
+                return false;
+            if (path == "Assets")
+                return false;
+            var settings = AddressableAssetSettingsDefaultObject.SettingsExists ? AddressableAssetSettingsDefaultObject.Settings : null;
+            if (settings != null && path.StartsWith(settings.ConfigFolder) || path.StartsWith(AddressableAssetSettingsDefaultObject.kDefaultConfigFolder))
+                return false;
             return !excludedExtensions.Contains(Path.GetExtension(path));
         }
 
         internal static bool IsPathValidPackageAsset(string path)
         {
-            string convertPath = path.ToLower().Replace("\\", "/");
-            string[] splitPath = convertPath.Split('/');
+            string[] splitPath = path.ToLower().Split(Path.DirectorySeparatorChar);
 
             if (splitPath.Length < 3)
                 return false;
             if (splitPath[0] != "packages")
                 return false;
-            if (splitPath.Length == 3)
-            {
-                string ext = Path.GetExtension(splitPath[2]);
-                if (ext == ".json" || ext == ".asmdef")
-                    return false;
-            }
+            if (splitPath[2] == "package.json")
+                return false;
             return true;
         }
 
@@ -91,7 +95,7 @@ namespace UnityEditor.AddressableAssets.Settings
                 return t;
             }
 
-            if (t == typeof(DefaultAsset) && allowFolders)
+            if (t == typeof(DefaultAsset))
                 return typeof(DefaultAsset);
 
             //try to remap the editor type to a runtime type
@@ -128,8 +132,7 @@ namespace UnityEditor.AddressableAssets.Settings
                 currCount++;
                 var group = settings.CreateGroup(bundle, false, false, false, null);
                 var schema = group.AddSchema<BundledAssetGroupSchema>();
-                schema.BuildPath.SetVariableByName(settings, AddressableAssetSettings.kLocalBuildPath);
-                schema.LoadPath.SetVariableByName(settings, AddressableAssetSettings.kLocalLoadPath);
+                schema.Validate();
                 schema.BundleMode = BundledAssetGroupSchema.BundlePackingMode.PackTogether;
                 group.AddSchema<ContentUpdateGroupSchema>().StaticContent = true;
 
@@ -280,69 +283,140 @@ namespace UnityEditor.AddressableAssets.Settings
 
             return result;
         }
-        
+
         internal static bool IsUsingVCIntegration()
         {
             return Provider.isActive && Provider.enabled;
         }
 
-        private static bool DisplayDialogueForEditingLockedFile(string path)
+        internal static bool IsVCAssetOpenForEdit(string path)
         {
-            return EditorUtility.DisplayDialog("Attemping to edit locked file",
-                "File " + path + " is locked. Check out?", "Yes", "No");
-        }
-
-        private static bool MakeAssetEditable(Object target, string path)
-        {
-            if (string.IsNullOrEmpty(path))
-                return false;
-#if UNITY_2019_4_OR_NEWER
-            if(!AssetDatabase.IsOpenForEdit(target))
-                return AssetDatabase.MakeEditable(path);
-#else
-            Asset asset = Provider.GetAssetByPath(path);
-            if (asset != null && !Provider.IsOpenForEdit(asset))
+            AssetList VCAssets = GetVCAssets(path);
+            foreach (Asset vcAsset in VCAssets)
             {
-                Task task = Provider.Checkout(asset, CheckoutMode.Asset);
-                task.Wait();
-                return task.success;
+                if (vcAsset.path == path)
+                    return Provider.IsOpenForEdit(vcAsset);
             }
-#endif
             return false;
         }
 
-         internal static bool OpenAssetIfUsingVCIntegration(Object target, bool exitGUI = false)
-         {
-            if (target == null)
-                return false;
-            return OpenAssetIfUsingVCIntegration(target, AssetDatabase.GetAssetOrScenePath(target), exitGUI);
-         }
-
-        internal static bool OpenAssetIfUsingVCIntegration(Object target, string path, bool exitGUI = false)
+        internal static AssetList GetVCAssets(string path)
         {
-            bool openedAsset = false;
-            if (string.IsNullOrEmpty(path) || !IsUsingVCIntegration())
-                return openedAsset;
-            if (DisplayDialogueForEditingLockedFile(path))
-                openedAsset = MakeAssetEditable(target, path);
+            VersionControl.Task op = Provider.Status(path);
+            op.Wait();
+            return op.assetList;
+        }
+
+        private static bool MakeAssetEditable(Asset asset)
+        {
+            if (!AssetDatabase.IsOpenForEdit(asset.path))
+                return AssetDatabase.MakeEditable(asset.path);
+            return false;
+        }
+
+        internal static bool OpenAssetIfUsingVCIntegration(Object target, bool exitGUI = false)
+        {
+            if (!IsUsingVCIntegration() || target == null)
+                return false;
+            return OpenAssetIfUsingVCIntegration(AssetDatabase.GetAssetOrScenePath(target), exitGUI);
+        }
+
+        internal static bool OpenAssetIfUsingVCIntegration(string path, bool exitGUI = false)
+        {
+            if (!IsUsingVCIntegration() || string.IsNullOrEmpty(path))
+                return false;
+
+            AssetList assets = GetVCAssets(path);
+            var uneditableAssets = new List<Asset>();
+            string message = "Check out file(s)?\n\n";
+            foreach (Asset asset in assets)
+            {
+                if (!Provider.IsOpenForEdit(asset))
+                {
+                    uneditableAssets.Add(asset);
+                    message += $"{asset.path}\n";
+                }
+            }
+
+            if (uneditableAssets.Count == 0)
+                return false;
+
+            bool openedAsset = true;
+            if (EditorUtility.DisplayDialog("Attempting to modify files that are uneditable", message, "Yes", "No"))
+            {
+                foreach (Asset asset in uneditableAssets)
+                {
+                    if (!MakeAssetEditable(asset))
+                        openedAsset = false;
+                }
+            }
+            else
+                openedAsset = false;
+
             if (exitGUI)
                 GUIUtility.ExitGUI();
             return openedAsset;
         }
 
-        internal static List<PackageManager.PackageInfo> GetPackages()
+        internal static bool InstallCCDPackage()
         {
-            ListRequest req = Client.List();
-            while (!req.IsCompleted) {}
-
-            var packages = new List<PackageManager.PackageInfo>();
-            if (req.Status == StatusCode.Success)
+#if !ENABLE_CCD
+            var confirm = EditorUtility.DisplayDialog("Install CCD Management SDK Package", "Are you sure you want to install the CCD Management SDK pre-release package and enable experimental CCD features within Addressables?\nTo remove this package and its related features, please use the Package manager.  Alternatively, uncheck the Addressable Asset Settings > Cloud Content Delivery > Enable Experimental CCD Features toggle to remove the package.", "Yes", "No");
+            if (confirm)
             {
-                PackageCollection collection = req.Result;
-                foreach (PackageManager.PackageInfo package in collection)
-                    packages.Add(package);
+                Client.Add("com.unity.services.ccd.management@1.0.0-pre.2");
+                AddressableAssetSettingsDefaultObject.Settings.CCDEnabled = true;
             }
-            return packages;
+#endif
+            return AddressableAssetSettingsDefaultObject.Settings.CCDEnabled;
+        }
+
+        internal static bool RemoveCCDPackage()
+        {
+            var confirm = EditorUtility.DisplayDialog("Remove CCD Management SDK Package", "Are you sure you want to remove the CCD Management SDK package?", "Yes", "No");
+            if (confirm)
+            {
+#if (ENABLE_CCD && UNITY_2019_4_OR_NEWER)
+                Client.Remove("com.unity.services.ccd.management");
+                AddressableAssetSettingsDefaultObject.Settings.CCDEnabled = false;
+#endif
+            }
+            return AddressableAssetSettingsDefaultObject.Settings.CCDEnabled;
+        }
+
+        internal static string GetMd5Hash(string path)
+        {
+            string hashString;
+            using (var md5 = MD5.Create())
+            {
+                using (var stream = File.OpenRead(path))
+                {
+                    var hash = md5.ComputeHash(stream);
+                    hashString = BitConverter.ToString(hash).Replace("-", "").ToLowerInvariant();
+
+                }
+            }
+            return hashString;
+        }
+
+
+
+        internal static System.Threading.Tasks.Task ParallelForEachAsync<T>(this IEnumerable<T> source, int dop, Func<T, System.Threading.Tasks.Task> body)
+        {
+            async System.Threading.Tasks.Task AwaitPartition(IEnumerator<T> partition)
+            {
+                using (partition)
+                {
+                    while (partition.MoveNext())
+                    { await body(partition.Current); }
+                }
+            }
+            return System.Threading.Tasks.Task.WhenAll(
+                Partitioner
+                    .Create(source)
+                    .GetPartitions(dop)
+                    .AsParallel()
+                    .Select(p => AwaitPartition(p)));
         }
     }
 }

@@ -13,7 +13,6 @@ using UnityEngine.TestTools;
 public abstract class InitializationObjectsAsyncTests : AddressablesTestFixture
 {
     [UnityTest]
-    [Timeout(3000)]
     public IEnumerator InitializationObjects_CompletesWhenNoObjectsPresent()
     {
         if (m_RuntimeSettingsPath.StartsWith("GUID:"))
@@ -37,7 +36,6 @@ public abstract class InitializationObjectsAsyncTests : AddressablesTestFixture
     }
 
     [Test]
-    [Timeout(3000)]
     public void InitializationObjects_CompletesSyncWhenNoObjectsPresent()
     {
         if (m_RuntimeSettingsPath.StartsWith("GUID:"))
@@ -87,7 +85,6 @@ public abstract class InitializationObjectsAsyncTests : AddressablesTestFixture
 
 #if UNITY_EDITOR
     [UnityTest]
-    [Timeout(5000)]
     public IEnumerator InitializationObjects_CompletesWhenObjectsPresent()
     {
         if (m_RuntimeSettingsPath.StartsWith("GUID:"))
@@ -117,7 +114,6 @@ public abstract class InitializationObjectsAsyncTests : AddressablesTestFixture
     }
 
     [Test]
-    [Timeout(5000)]
     public void InitializationObjects_CompletesSyncWhenObjectsPresent()
     {
         if (m_RuntimeSettingsPath.StartsWith("GUID:"))
@@ -148,7 +144,6 @@ public abstract class InitializationObjectsAsyncTests : AddressablesTestFixture
 #endif
 
     [UnityTest]
-    [Timeout(3000)]
     public IEnumerator InitializationAsync_HandlesEmptyData()
     {
         if (m_RuntimeSettingsPath.StartsWith("GUID:"))
@@ -194,6 +189,7 @@ public abstract class InitializationObjectsAsyncTests : AddressablesTestFixture
     }
 
     [UnityTest]
+    [UnityPlatform(exclude = new []{RuntimePlatform.XboxOne})]
     public IEnumerator CacheInitializationObject_FullySetsCachingData()
     {
 #if ENABLE_CACHING
@@ -202,12 +198,12 @@ public abstract class InitializationObjectsAsyncTests : AddressablesTestFixture
         {
             CacheDirectoryOverride = Caching.currentCacheForWriting.path,
             CompressionEnabled = Caching.compressionEnabled,
-            ExpirationDelay = Caching.currentCacheForWriting.expirationDelay,
+            //ExpirationDelay = Caching.currentCacheForWriting.expirationDelay,
             MaximumCacheSize = Caching.currentCacheForWriting.maximumAvailableStorageSpace
         };
 
         string cacheDirectoryOverride = "TestDirectory";
-        int expirationDelay = 4321;
+        //int expirationDelay = 4321;
         long maxCacheSize = 9876;
         bool compressionEnabled = !preTestCacheData.CompressionEnabled;
 
@@ -215,7 +211,7 @@ public abstract class InitializationObjectsAsyncTests : AddressablesTestFixture
         {
             CacheDirectoryOverride = cacheDirectoryOverride,
             CompressionEnabled = compressionEnabled,
-            ExpirationDelay = expirationDelay,
+            //ExpirationDelay = expirationDelay,
             LimitCacheSize = true,
             MaximumCacheSize = maxCacheSize
         };
@@ -227,7 +223,7 @@ public abstract class InitializationObjectsAsyncTests : AddressablesTestFixture
         yield return handle;
 
         Assert.AreEqual(cacheDirectoryOverride, Caching.currentCacheForWriting.path);
-        Assert.AreEqual(expirationDelay, Caching.currentCacheForWriting.expirationDelay);
+        //Assert.AreEqual(expirationDelay, Caching.currentCacheForWriting.expirationDelay);
         Assert.AreEqual(compressionEnabled, Caching.compressionEnabled);
         Assert.AreEqual(maxCacheSize, Caching.currentCacheForWriting.maximumAvailableStorageSpace);
 
@@ -235,7 +231,7 @@ public abstract class InitializationObjectsAsyncTests : AddressablesTestFixture
         Cache cache = Caching.GetCacheByPath(preTestCacheData.CacheDirectoryOverride);
         Caching.compressionEnabled = preTestCacheData.CompressionEnabled;
         cache.maximumAvailableStorageSpace = preTestCacheData.MaximumCacheSize;
-        cache.expirationDelay = preTestCacheData.ExpirationDelay;
+        //cache.expirationDelay = preTestCacheData.ExpirationDelay;
         Caching.currentCacheForWriting = cache;
 
         handle.Release();

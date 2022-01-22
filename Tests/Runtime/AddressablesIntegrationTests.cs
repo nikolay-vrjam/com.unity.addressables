@@ -29,8 +29,8 @@ namespace AddressableAssetsIntegrationTests
         protected abstract string TypeName { get; }
         protected virtual string PathFormat { get { return "Assets/{0}_AssetsToDelete_{1}"; } }
 
-        protected virtual string GetRuntimePath(string testType, string suffix) { return string.Format("{0}Library/com.unity.addressables/settings_{1}_TEST_{2}.json", "file://{UnityEngine.Application.dataPath}/../", testType, suffix); }
-        protected virtual string GetCatalogPath(string testType, string suffix) { return string.Format("{0}Library/com.unity.addressables/catalog_{1}_TEST_{2}.json", "file://{UnityEngine.Application.dataPath}/../", testType, suffix); }
+        protected virtual string GetRuntimePath(string testType, string suffix) { return string.Format("{0}" + Addressables.LibraryPath + "settings_{1}_TEST_{2}.json", "file://{UnityEngine.Application.dataPath}/../", testType, suffix); }
+        protected virtual string GetCatalogPath(string testType, string suffix) { return string.Format("{0}" + Addressables.LibraryPath + "catalog_{1}_TEST_{2}.json", "file://{UnityEngine.Application.dataPath}/../", testType, suffix); }
         protected virtual ILocationSizeData CreateLocationSizeData(string name, long size, uint crc, string hash) { return null; }
 
         private object AssetReferenceObjectKey { get { return m_PrefabKeysList.FirstOrDefault(s => s.ToString().Contains("AssetReferenceBehavior")); } }
@@ -57,7 +57,7 @@ namespace AddressableAssetsIntegrationTests
         public void TearDown()
         {
             Assert.AreEqual(m_StartingOpCount, m_Addressables.ResourceManager.OperationCacheCount);
-            Assert.AreEqual(m_StartingTrackedHandleCount, m_Addressables.TrackedHandleCount);
+            Assert.AreEqual(m_StartingTrackedHandleCount, m_Addressables.TrackedHandleCount, $"Starting tracked handle count [{m_StartingInstanceCount}], not equal to current tracked handle count [{m_Addressables.TrackedHandleCount}]");
             Assert.AreEqual(m_StartingInstanceCount, m_Addressables.ResourceManager.InstanceOperationCount);
 
             PostTearDownEvent?.Invoke();
@@ -218,8 +218,25 @@ namespace AddressableAssetsIntegrationTests
             AddressablesTestUtility.TearDown("BuildScriptPackedMode", PathFormat, "BASE");
             AddressablesTestUtility.TearDown(TypeName, PathFormat, "BASE");
         }
-    }
 
+        [UnityTest]
+        public IEnumerator GetDownloadSize_CalculatesCachedBundles()
+        {
+            return GetDownloadSize_CalculatesCachedBundlesInternal();
+        }
+
+        [UnityTest]
+        public IEnumerator GetDownloadSize_WithList_CalculatesCachedBundles()
+        {
+            return GetDownloadSize_WithList_CalculatesCachedBundlesInternal();
+        }
+
+        [UnityTest]
+        public IEnumerator GetDownloadSize_WithList_CalculatesCorrectSize_WhenAssetsReferenceSameBundle()
+        {
+            return GetDownloadSize_WithList_CalculatesCorrectSize_WhenAssetsReferenceSameBundleInternal();
+        }
+    }
 #endif
 
     class AddressablesIntegrationPlayer : AddressablesIntegrationTests
@@ -237,6 +254,24 @@ namespace AddressableAssetsIntegrationTests
                 Crc = crc,
                 Hash = hash
             };
+        }
+
+        [UnityTest]
+        public IEnumerator GetDownloadSize_CalculatesCachedBundles()
+        {
+            return GetDownloadSize_CalculatesCachedBundlesInternal();
+        }
+
+        [UnityTest]
+        public IEnumerator GetDownloadSize_WithList_CalculatesCachedBundles()
+        {
+            return GetDownloadSize_WithList_CalculatesCachedBundlesInternal();
+        }
+
+        [UnityTest]
+        public IEnumerator GetDownloadSize_WithList_CalculatesCorrectSize_WhenAssetsReferenceSameBundle()
+        {
+            return GetDownloadSize_WithList_CalculatesCorrectSize_WhenAssetsReferenceSameBundleInternal();
         }
     }
 }

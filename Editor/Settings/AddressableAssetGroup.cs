@@ -45,6 +45,23 @@ namespace UnityEditor.AddressableAssets.Settings
         AddressableAssetGroupSchemaSet m_SchemaSet = new AddressableAssetGroupSchemaSet();
 
         Dictionary<string, AddressableAssetEntry> m_EntryMap = new Dictionary<string, AddressableAssetEntry>();
+        List<AddressableAssetEntry> m_FolderEntryCache = null;
+        List<AddressableAssetEntry> m_AssetCollectionEntryCache = null;
+        
+        internal void RefreshEntriesCache()
+        {
+            m_FolderEntryCache = new List<AddressableAssetEntry>();
+            m_AssetCollectionEntryCache = new List<AddressableAssetEntry>();
+            foreach (AddressableAssetEntry e in entries)
+            {
+                if (!string.IsNullOrEmpty(e.AssetPath) && e.MainAssetType == typeof(DefaultAsset) && AssetDatabase.IsValidFolder(e.AssetPath))
+                    m_FolderEntryCache.Add(e);
+#pragma warning disable 0618
+                else if (!string.IsNullOrEmpty(e.AssetPath) && e.AssetPath.EndsWith(".asset") && e.MainAssetType == typeof(AddressableAssetEntryCollection))
+                    m_AssetCollectionEntryCache.Add(e);
+#pragma warning restore 0618
+            }
+        }
 
         /// <summary>
         /// The group name.
@@ -60,15 +77,14 @@ namespace UnityEditor.AddressableAssets.Settings
             }
             set
             {
-                string temp = value;
-                temp = temp.Replace('/', '-');
-                temp = temp.Replace('\\', '-');
-                if (temp != value)
+                string newName = value;
+                newName = newName.Replace('/', '-');
+                newName = newName.Replace('\\', '-');
+                if (newName != value)
                     Debug.Log("Group names cannot include '\\' or '/'.  Replacing with '-'. " + m_GroupName);
-                if (m_GroupName != temp)
+                if (m_GroupName != newName)
                 {
                     string previousName = m_GroupName;
-                    m_GroupName = temp;
 
                     string guid;
                     long localId;
@@ -79,27 +95,31 @@ namespace UnityEditor.AddressableAssets.Settings
                         {
                             var folder = Path.GetDirectoryName(path);
                             var extension = Path.GetExtension(path);
-                            var newPath = $"{folder}/{m_GroupName}{extension}".Replace('\\', '/');
+                            var newPath = $"{folder}/{newName}{extension}".Replace('\\', '/');
                             if (path != newPath)
                             {
                                 var setPath = AssetDatabase.MoveAsset(path, newPath);
-                                if (!string.IsNullOrEmpty(setPath) || !RenameSchemaAssets())
+                                bool success = false;
+                                if (string.IsNullOrEmpty(setPath))
+                                {
+                                    name = m_GroupName = newName;
+                                    success = RenameSchemaAssets();
+                                }
+
+                                if (success == false)
                                 {
                                     //unable to rename group due to invalid file name
                                     Debug.LogError("Rename of Group failed. " + setPath);
-                                    m_GroupName = previousName;
+                                    name = m_GroupName = previousName;
                                 }
                             }
                         }
-
-                        name = m_GroupName;
                     }
                     else
                     {
                         //this isn't a valid asset, which means it wasn't persisted, so just set the object name to the desired display name.
-                        name = m_GroupName;
+                        name = m_GroupName = newName;
                     }
-                    
 
                     SetDirty(AddressableAssetSettings.ModificationEvent.GroupRenamed, this, true, true);
                 }
@@ -145,7 +165,12 @@ namespace UnityEditor.AddressableAssets.Settings
             if (added != null)
             {
                 added.Group = this;
+                if (m_Settings && m_Settings.IsPersisted)
+                    EditorUtility.SetDirty(added);
+
                 SetDirty(AddressableAssetSettings.ModificationEvent.GroupSchemaAdded, this, postEvent, true);
+
+                AssetDatabase.SaveAssets();
             }
             return added;
         }
@@ -162,7 +187,12 @@ namespace UnityEditor.AddressableAssets.Settings
             if (added != null)
             {
                 added.Group = this;
+                if (m_Settings && m_Settings.IsPersisted)
+                    EditorUtility.SetDirty(added);
+
                 SetDirty(AddressableAssetSettings.ModificationEvent.GroupSchemaAdded, this, postEvent, true);
+
+                AssetDatabase.SaveAssets();
             }
             return added;
         }
@@ -287,6 +317,26 @@ namespace UnityEditor.AddressableAssets.Settings
                 return m_EntryMap.Values;
             }
         }
+        
+        internal ICollection<AddressableAssetEntry> FolderEntries
+        {
+            get
+            {
+                if (m_FolderEntryCache == null)
+                    RefreshEntriesCache();
+                return m_FolderEntryCache;
+            }
+        }
+        
+        internal ICollection<AddressableAssetEntry> AssetCollectionEntries
+        {
+            get
+            {
+                if (m_AssetCollectionEntryCache == null)
+                    RefreshEntriesCache();
+                return m_AssetCollectionEntryCache;
+            }
+        }
 
         /// <summary>
         /// Is the default group.
@@ -350,6 +400,8 @@ namespace UnityEditor.AddressableAssets.Settings
         internal void ResetEntryMap()
         {
             m_EntryMap.Clear();
+            m_FolderEntryCache = null;
+            m_AssetCollectionEntryCache = null;
             foreach (var e in m_SerializeEntries)
             {
                 try
@@ -387,6 +439,8 @@ namespace UnityEditor.AddressableAssets.Settings
                     }
                     if (m_SchemaSet.Schemas[i].Group == null)
                         m_SchemaSet.Schemas[i].Group = this;
+
+                    m_SchemaSet.Schemas[i].Validate();
                 }
             }
 
@@ -468,6 +522,12 @@ namespace UnityEditor.AddressableAssets.Settings
             e.IsSubAsset = false;
             e.parentGroup = this;
             m_EntryMap[e.guid] = e;
+            if (m_FolderEntryCache != null && !string.IsNullOrEmpty(e.AssetPath) && e.MainAssetType == typeof(DefaultAsset) && AssetDatabase.IsValidFolder(e.AssetPath))
+                m_FolderEntryCache.Add(e);
+#pragma warning disable 0618
+            else if (m_AssetCollectionEntryCache != null && !string.IsNullOrEmpty(e.AssetPath) && e.AssetPath.EndsWith(".asset") && e.MainAssetType == typeof(AddressableAssetEntryCollection))
+                m_AssetCollectionEntryCache.Add(e);
+#pragma warning restore 0618
             m_SerializeEntries = null;
             SetDirty(AddressableAssetSettings.ModificationEvent.EntryAdded, e, postEvent, true);
         }
@@ -479,9 +539,50 @@ namespace UnityEditor.AddressableAssets.Settings
         /// <returns></returns>
         public virtual AddressableAssetEntry GetAssetEntry(string guid)
         {
-            AddressableAssetEntry entry;
-            m_EntryMap.TryGetValue(guid, out entry);
-            return entry;
+            return GetAssetEntry(guid, false);
+        }
+
+        /// <summary>
+        /// Get an entry via the asset guid.
+        /// </summary>
+        /// <param name="guid">The asset guid.</param>
+        /// <param name="includeImplicit">Whether or not to include implicit asset entries in the search.</param>
+        /// <returns></returns>
+        public virtual AddressableAssetEntry GetAssetEntry(string guid, bool includeImplicit)
+        {
+            if (m_EntryMap.TryGetValue(guid, out var entry))
+                return entry;
+            return includeImplicit ? GetImplicitAssetEntry(guid, null) : null;
+        }
+
+        internal AddressableAssetEntry GetImplicitAssetEntry(string assetGuid, string assetPath)
+        {
+            if (AssetCollectionEntries.Count != 0)
+            {
+                AddressableAssetEntry entry;
+                foreach (var e in m_AssetCollectionEntryCache)
+                {
+                    entry = e.GetAssetCollectionSubEntry(assetGuid);
+                    if (entry != null)
+                        return entry;
+                }
+            }
+            
+            if (FolderEntries.Count != 0)
+            {
+                if (assetPath == null)
+                    assetPath = AssetDatabase.GUIDToAssetPath(assetGuid);
+
+                AddressableAssetEntry entry;
+                foreach (var e in m_FolderEntryCache)
+                {
+                    entry = e.GetFolderSubEntry(assetGuid, assetPath);
+                    if (entry != null)
+                        return entry;
+                }
+            }
+            
+            return null;
         }
 
         /// <summary>
@@ -509,6 +610,8 @@ namespace UnityEditor.AddressableAssets.Settings
         public void RemoveAssetEntry(AddressableAssetEntry entry, bool postEvent = true)
         {
             m_EntryMap.Remove(entry.guid);
+            m_FolderEntryCache?.Remove(entry);
+            m_AssetCollectionEntryCache?.Remove(entry);
             entry.parentGroup = null;
             m_SerializeEntries = null;
             SetDirty(AddressableAssetSettings.ModificationEvent.EntryRemoved, entry, postEvent, true);
@@ -519,6 +622,8 @@ namespace UnityEditor.AddressableAssets.Settings
             foreach (AddressableAssetEntry entry in removeEntries)
             {
                 m_EntryMap.Remove(entry.guid);
+                m_FolderEntryCache?.Remove(entry);
+                m_AssetCollectionEntryCache?.Remove(entry);
                 entry.parentGroup = null;
             }
             if (removeEntries.Count() > 0)

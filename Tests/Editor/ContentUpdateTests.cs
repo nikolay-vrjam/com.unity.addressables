@@ -39,7 +39,7 @@ namespace UnityEditor.AddressableAssets.Tests
             var op = Settings.ActivePlayerDataBuilder.BuildData<AddressablesPlayerBuildResult>(context);
 
             Assert.IsTrue(string.IsNullOrEmpty(op.Error), op.Error);
-            var tempPath = Path.GetDirectoryName(Application.dataPath) + "/Library/com.unity.addressables/" + PlatformMappingService.GetPlatform() + "/addressables_content_state.bin";
+            var tempPath = Path.GetDirectoryName(Application.dataPath) + "/" + Addressables.LibraryPath + PlatformMappingService.GetPlatformPathSubFolder() + "/addressables_content_state.bin";
             var cacheData = ContentUpdateScript.LoadContentState(tempPath);
             Assert.NotNull(cacheData);
             Settings.RemoveGroup(group);
@@ -71,7 +71,7 @@ namespace UnityEditor.AddressableAssets.Tests
             var op = Settings.ActivePlayerDataBuilder.BuildData<AddressablesPlayerBuildResult>(context);
 
             Assert.IsTrue(string.IsNullOrEmpty(op.Error), op.Error);
-            var tempPath = Path.GetDirectoryName(Application.dataPath) + "/Library/com.unity.addressables/" + PlatformMappingService.GetPlatform() + "/addressables_content_state.bin";
+            var tempPath = Path.GetDirectoryName(Application.dataPath) + "/" + Addressables.LibraryPath + PlatformMappingService.GetPlatformPathSubFolder() + "/addressables_content_state.bin";
             var cacheData = ContentUpdateScript.LoadContentState(tempPath);
             Assert.NotNull(cacheData);
             Assert.NotNull(cacheData.cachedInfos.FirstOrDefault(s => s.asset.guid.ToString() == m_AssetGUID));
@@ -80,7 +80,7 @@ namespace UnityEditor.AddressableAssets.Tests
             context = new AddressablesDataBuilderInput(Settings);
             op = Settings.ActivePlayerDataBuilder.BuildData<AddressablesPlayerBuildResult>(context);
             Assert.IsTrue(string.IsNullOrEmpty(op.Error), op.Error);
-            tempPath = Path.GetDirectoryName(Application.dataPath) + "/Library/com.unity.addressables/" + PlatformMappingService.GetPlatform() + "/addressables_content_state.bin";
+            tempPath = Path.GetDirectoryName(Application.dataPath) + "/" + Addressables.LibraryPath + PlatformMappingService.GetPlatformPathSubFolder() + "/addressables_content_state.bin";
             cacheData = ContentUpdateScript.LoadContentState(tempPath);
             Assert.NotNull(cacheData);
             Assert.IsNull(cacheData.cachedInfos.FirstOrDefault(s => s.asset.guid.ToString() == m_AssetGUID));
@@ -118,13 +118,9 @@ namespace UnityEditor.AddressableAssets.Tests
             var path = AssetDatabase.GUIDToAssetPath(m_AssetGUID);
             var obj = AssetDatabase.LoadAssetAtPath<GameObject>(path);
             obj.GetComponent<Transform>().SetPositionAndRotation(new Vector3(10, 10, 10), Quaternion.identity);
-#if UNITY_2018_3_OR_NEWER
             PrefabUtility.SavePrefabAsset(obj);
-#else
-            EditorUtility.SetDirty(obj);
-#endif
             AssetDatabase.SaveAssets();
-            var tempPath = Path.GetDirectoryName(Application.dataPath) + "/Library/com.unity.addressables/" + PlatformMappingService.GetPlatform() + "/addressables_content_state.bin";
+            var tempPath = Path.GetDirectoryName(Application.dataPath) + "/" + Addressables.LibraryPath + PlatformMappingService.GetPlatformPathSubFolder() + "/addressables_content_state.bin";
             var modifiedEntries = ContentUpdateScript.GatherModifiedEntries(Settings, tempPath);
             Assert.IsNotNull(modifiedEntries);
             Assert.GreaterOrEqual(modifiedEntries.Count, 1);
@@ -134,6 +130,129 @@ namespace UnityEditor.AddressableAssets.Tests
             var movedEntry = contentGroup.GetAssetEntry(m_AssetGUID);
             Assert.AreSame(movedEntry, entry);
             Settings.RemoveGroup(group);
+        }
+
+        [Test]
+        public void GatherModifiedEntries_WhenDependencyBundleNameIsSame_DependencyIsNotFlaggedAsModified()
+        {
+            // Create assets
+            GameObject mainObject = new GameObject("mainObject");
+            Material mat = new Material(Shader.Find("Transparent/Diffuse"));
+            mainObject.AddComponent<MeshRenderer>().material = mat;
+
+            string mainAssetPath = GetAssetPath("mainObject.prefab");
+            string staticAssetPath = GetAssetPath("staticObject.mat");
+
+            AssetDatabase.CreateAsset(mat, staticAssetPath);
+            PrefabUtility.SaveAsPrefabAsset(mainObject, mainAssetPath);
+            AssetDatabase.SaveAssets();
+
+            // Create addressables
+            AddressableAssetGroup mainAssetGroup = Settings.CreateGroup("PrefabGroup", false, false, false, null);
+            AddressableAssetGroup staticContentGroup = Settings.CreateGroup("MatGroup", false, false, false, null);
+
+            var schema = mainAssetGroup.AddSchema<BundledAssetGroupSchema>();
+            schema.BuildPath.SetVariableByName(Settings, AddressableAssetSettings.kLocalBuildPath);
+            schema.LoadPath.SetVariableByName(Settings, AddressableAssetSettings.kLocalLoadPath);
+            schema.BundleMode = BundledAssetGroupSchema.BundlePackingMode.PackTogether;
+            mainAssetGroup.AddSchema<ContentUpdateGroupSchema>().StaticContent = true;
+
+            schema = staticContentGroup.AddSchema<BundledAssetGroupSchema>();
+            schema.BuildPath.SetVariableByName(Settings, AddressableAssetSettings.kLocalBuildPath);
+            schema.LoadPath.SetVariableByName(Settings, AddressableAssetSettings.kLocalLoadPath);
+            schema.BundleMode = BundledAssetGroupSchema.BundlePackingMode.PackTogether;
+            staticContentGroup.AddSchema<ContentUpdateGroupSchema>().StaticContent = true;
+
+            AddressableAssetEntry mainEntry = Settings.CreateOrMoveEntry(AssetDatabase.AssetPathToGUID(mainAssetPath), mainAssetGroup);
+            AddressableAssetEntry staticEntry = Settings.CreateOrMoveEntry(AssetDatabase.AssetPathToGUID(staticAssetPath), staticContentGroup);
+
+            // Build
+            var context = new AddressablesDataBuilderInput(Settings);
+            Settings.ActivePlayerDataBuilder.BuildData<AddressablesPlayerBuildResult>(context);
+
+            // Modify assets
+            var mainAsset = AssetDatabase.LoadAssetAtPath<GameObject>(mainAssetPath);
+            mainAsset.GetComponent<Transform>().SetPositionAndRotation(new Vector3(10, 10, 10), Quaternion.identity);
+            PrefabUtility.SavePrefabAsset(mainAsset);
+            AssetDatabase.SaveAssets();
+
+            // Test
+            var tempPath = Path.GetDirectoryName(Application.dataPath) + "/Library/com.unity.addressables/" + PlatformMappingService.GetPlatformPathSubFolder() + "/addressables_content_state.bin";
+            var modifiedEntries = ContentUpdateScript.GatherModifiedEntries(Settings, tempPath);
+
+            Assert.AreEqual(1, modifiedEntries.Count);
+            Assert.AreSame(modifiedEntries[0], mainEntry);
+
+            // Cleanup
+            GameObject.DestroyImmediate(mainObject);
+
+            Settings.RemoveGroup(mainAssetGroup);
+            Settings.RemoveGroup(staticContentGroup);
+
+            AssetDatabase.DeleteAsset(mainAssetPath);
+            AssetDatabase.DeleteAsset(staticAssetPath);
+        }
+
+        [Test]
+        public void GatherModifiedEntries_WhenDependencyBundleNameIsChanged_DependencyIsFlaggedAsModified()
+        {
+            // Create assets
+            GameObject mainObject = new GameObject("mainObject");
+            Material mat = new Material(Shader.Find("Transparent/Diffuse"));
+            mainObject.AddComponent<MeshRenderer>().material = mat;
+
+            string mainAssetPath = GetAssetPath("mainObject.prefab");
+            string staticAssetPath = GetAssetPath("staticObject.mat");
+
+            AssetDatabase.CreateAsset(mat, staticAssetPath);
+            PrefabUtility.SaveAsPrefabAsset(mainObject, mainAssetPath);
+            AssetDatabase.SaveAssets();
+
+            // Create addressables
+            AddressableAssetGroup mainAssetGroup = Settings.CreateGroup("PrefabGroup2", false, false, false, null);
+            AddressableAssetGroup staticContentGroup = Settings.CreateGroup("MatGroup2", false, false, false, null);
+
+            var schema = mainAssetGroup.AddSchema<BundledAssetGroupSchema>();
+            schema.BuildPath.SetVariableByName(Settings, AddressableAssetSettings.kLocalBuildPath);
+            schema.LoadPath.SetVariableByName(Settings, AddressableAssetSettings.kLocalLoadPath);
+            schema.BundleMode = BundledAssetGroupSchema.BundlePackingMode.PackTogether;
+            mainAssetGroup.AddSchema<ContentUpdateGroupSchema>().StaticContent = true;
+
+            schema = staticContentGroup.AddSchema<BundledAssetGroupSchema>();
+            schema.BuildPath.SetVariableByName(Settings, AddressableAssetSettings.kLocalBuildPath);
+            schema.LoadPath.SetVariableByName(Settings, AddressableAssetSettings.kLocalLoadPath);
+            schema.BundleMode = BundledAssetGroupSchema.BundlePackingMode.PackTogether;
+            staticContentGroup.AddSchema<ContentUpdateGroupSchema>().StaticContent = true;
+
+            AddressableAssetEntry mainEntry = Settings.CreateOrMoveEntry(AssetDatabase.AssetPathToGUID(mainAssetPath), mainAssetGroup);
+            AddressableAssetEntry staticEntry = Settings.CreateOrMoveEntry(AssetDatabase.AssetPathToGUID(staticAssetPath), staticContentGroup);
+
+            // Build
+            var context = new AddressablesDataBuilderInput(Settings);
+            Settings.ActivePlayerDataBuilder.BuildData<AddressablesPlayerBuildResult>(context);
+
+            // Modify assets
+            var mainAsset = AssetDatabase.LoadAssetAtPath<GameObject>(mainAssetPath);
+            mainAsset.GetComponent<Transform>().SetPositionAndRotation(new Vector3(10, 10, 10), Quaternion.identity);
+            PrefabUtility.SavePrefabAsset(mainAsset);
+            staticContentGroup.GetSchema<BundledAssetGroupSchema>().InternalBundleIdMode = BundledAssetGroupSchema.BundleInternalIdMode.GroupGuidProjectIdEntriesHash;
+            AssetDatabase.SaveAssets();
+
+            // Test
+            var tempPath = Path.GetDirectoryName(Application.dataPath) + "/Library/com.unity.addressables/" + PlatformMappingService.GetPlatformPathSubFolder() + "/addressables_content_state.bin";
+            var modifiedEntries = ContentUpdateScript.GatherModifiedEntries(Settings, tempPath);
+
+            Assert.AreEqual(2, modifiedEntries.Count);
+            Assert.IsTrue(modifiedEntries.Contains(staticEntry));
+
+            // Cleanup
+            GameObject.DestroyImmediate(mainObject);
+
+            Settings.RemoveGroup(mainAssetGroup);
+            Settings.RemoveGroup(staticContentGroup);
+
+            AssetDatabase.DeleteAsset(mainAssetPath);
+            AssetDatabase.DeleteAsset(staticAssetPath);
         }
 
         [Test]
@@ -171,7 +290,7 @@ namespace UnityEditor.AddressableAssets.Tests
             {
                 {mainEntry, new List<AddressableAssetEntry>() }
             };
-            ContentUpdateScript.GetStaticContentDependenciesForEntries(Settings, ref staticDependencies);
+            ContentUpdateScript.GetStaticContentDependenciesForEntries(Settings, ref staticDependencies, null);
 
             Assert.AreEqual(1, staticDependencies.Count);
             Assert.AreEqual(1, staticDependencies[mainEntry].Count);
@@ -222,7 +341,7 @@ namespace UnityEditor.AddressableAssets.Tests
             {
                 {mainEntry, new List<AddressableAssetEntry>() }
             };
-            ContentUpdateScript.GetStaticContentDependenciesForEntries(Settings, ref staticDependencies);
+            ContentUpdateScript.GetStaticContentDependenciesForEntries(Settings, ref staticDependencies, null);
 
             Assert.AreEqual(1, staticDependencies.Count);
             Assert.AreEqual(0, staticDependencies[mainEntry].Count);
@@ -235,6 +354,61 @@ namespace UnityEditor.AddressableAssets.Tests
 
             AssetDatabase.DeleteAsset(mainAssetPath);
             AssetDatabase.DeleteAsset(dynamicAssetPath);
+        }
+
+        [Test]
+        public void GetStaticContentDependenciesOfModifiedEntries_WhenFolderHasModifiedImplicitAsset_DependenciesFlaggedAsModified()
+        {
+            var mainAssetGroup = Settings.CreateGroup("MainAssetGroup", false, false, false, null,
+                typeof(ContentUpdateGroupSchema), typeof(BundledAssetGroupSchema));
+
+            mainAssetGroup.GetSchema<ContentUpdateGroupSchema>().StaticContent = true;
+            mainAssetGroup.GetSchema<BundledAssetGroupSchema>().InternalBundleIdMode = BundledAssetGroupSchema.BundleInternalIdMode.GroupGuidProjectIdEntriesHash;
+
+            GameObject mainObject = new GameObject("mainObject");
+            Material mat = new Material(Shader.Find("Transparent/Diffuse"));
+            mainObject.AddComponent<MeshRenderer>().material = mat;
+
+            string folderName = "ContentUpdateFolder";
+            string folderGuid = AssetDatabase.CreateFolder(ConfigFolder, folderName);
+            string folderPath = Path.Combine(ConfigFolder, folderName).Replace("\\", "/");
+
+            string mainAssetPath = Path.Combine(folderPath, "mainAsset.prefab").Replace("\\", "/");
+            string subAssetPath = Path.Combine(folderPath, "subAsset.mat").Replace("\\", "/");
+
+            AssetDatabase.CreateAsset(mat, subAssetPath);
+            PrefabUtility.SaveAsPrefabAsset(mainObject, mainAssetPath);
+            AssetDatabase.SaveAssets();
+
+            string mainAssetGuid = AssetDatabase.AssetPathToGUID(mainAssetPath);
+            string subAssetGuid = AssetDatabase.AssetPathToGUID(subAssetPath);
+
+            var folderEntry = Settings.CreateOrMoveEntry(folderGuid, mainAssetGroup);
+            var entries = new List<AddressableAssetEntry>();
+            folderEntry.GatherAllAssets(entries, false, false, true);
+            AddressableAssetEntry mainAssetEntry = entries.Find(x => x.guid == mainAssetGuid);
+
+            var staticDependencies = new Dictionary<AddressableAssetEntry, List<AddressableAssetEntry>>()
+            {
+                { mainAssetEntry, new List<AddressableAssetEntry>() }
+            };
+
+            string cachedBundleName = "cachedBundleName";
+            var groupGuidToCacheBundleName = new Dictionary<string, string>()
+            {
+                { folderGuid, cachedBundleName },
+                { mainAssetGuid, cachedBundleName },
+                { subAssetGuid, cachedBundleName },
+            };
+            ContentUpdateScript.GetStaticContentDependenciesForEntries(Settings, ref staticDependencies, groupGuidToCacheBundleName);
+
+            Assert.AreEqual(1, staticDependencies.Count);
+            Assert.AreEqual(2, staticDependencies[mainAssetEntry].Count);
+
+            //Cleanup
+            GameObject.DestroyImmediate(mainObject);
+            Settings.RemoveGroup(mainAssetGroup);
+            AssetDatabase.DeleteAsset(folderPath);
         }
 
         static IResourceLocator GetLocatorFromCatalog(IEnumerable<string> paths)
@@ -269,7 +443,7 @@ namespace UnityEditor.AddressableAssets.Tests
             var origLocator = GetLocatorFromCatalog(op.FileRegistry.GetFilePaths());
             Assert.NotNull(origLocator);
 
-            var tempPath = Path.GetDirectoryName(Application.dataPath) + "/Library/com.unity.addressables/" + PlatformMappingService.GetPlatform() + "/addressables_content_state.bin";
+            var tempPath = Path.GetDirectoryName(Application.dataPath) + "/" + Addressables.LibraryPath + PlatformMappingService.GetPlatformPathSubFolder() + "/addressables_content_state.bin";
             var contentState = ContentUpdateScript.LoadContentState(tempPath);
             Assert.NotNull(contentState);
             Assert.NotNull(contentState.cachedBundles);
@@ -366,7 +540,7 @@ namespace UnityEditor.AddressableAssets.Tests
             var op = Settings.ActivePlayerDataBuilder.BuildData<AddressablesPlayerBuildResult>(context);
 
             Assert.IsTrue(string.IsNullOrEmpty(op.Error), op.Error);
-            var tempPath = Path.GetDirectoryName(Application.dataPath) + "/Library/com.unity.addressables/" + PlatformMappingService.GetPlatform() + "/addressables_content_state.bin";
+            var tempPath = Path.GetDirectoryName(Application.dataPath) + "/" + Addressables.LibraryPath + PlatformMappingService.GetPlatformPathSubFolder() + "/addressables_content_state.bin";
             ContentUpdateScript.BuildContentUpdate(Settings, tempPath);
             Assert.IsTrue(Directory.Exists(Addressables.BuildPath));
             Settings.BuildRemoteCatalog = oldSetting;
@@ -462,61 +636,47 @@ namespace UnityEditor.AddressableAssets.Tests
         private ContentUpdateScript.ContentUpdateContext GetContentUpdateContext(string contentUpdateTestAssetGUID, string contentUpdateTestCachedAssetHash,
             string contentUpdateTestNewInternalBundleName, string contentUpdateTestNewBundleName, string contentUpdateTestCachedBundlePath, string contentUpdateTestGroupGuid, string contentUpdateTestFileName)
         {
-            Dictionary<string, string> bundleToInternalBundle = new Dictionary<string, string>()
+            var context = new ContentUpdateScript.ContentUpdateContext()
             {
-                {
-                    contentUpdateTestNewInternalBundleName,
-                    contentUpdateTestNewBundleName
-                }
-            };
-
-            Dictionary<string, CachedAssetState> guidToCachedState = new Dictionary<string, CachedAssetState>()
-            {
-                //entry 1
-                {
-                    contentUpdateTestAssetGUID, new CachedAssetState()
-                    {
-                        bundleFileId = contentUpdateTestCachedBundlePath,
-                        asset = new AssetState()
-                        {
-                            guid = new GUID(contentUpdateTestAssetGUID),
-                            hash = Hash128.Parse(contentUpdateTestCachedAssetHash)
-                        },
-                        dependencies = new AssetState[] {},
-                        data = null,
-                        groupGuid = contentUpdateTestGroupGuid
-                    }
-                }
-            };
-
-            Dictionary<string, ContentCatalogDataEntry> idToCatalogEntryMap = new Dictionary<string, ContentCatalogDataEntry>()
-            {
-                //bundle entry
-                { contentUpdateTestNewBundleName,
-                  new ContentCatalogDataEntry(typeof(IAssetBundleResource), contentUpdateTestNewBundleName,
-                      typeof(AssetBundleProvider).FullName, new[] { contentUpdateTestNewBundleName})},
-                //asset entry
-                {
-                    contentUpdateTestAssetGUID,
-                    new ContentCatalogDataEntry(typeof(IResourceLocation), contentUpdateTestAssetGUID, typeof(BundledAssetProvider).FullName, new[] {contentUpdateTestAssetGUID})
-                }
-            };
-
-            IBundleWriteData writeData = new BundleWriteData();
-            writeData.AssetToFiles.Add(new GUID(contentUpdateTestAssetGUID), new List<string>() { contentUpdateTestFileName });
-            writeData.FileToBundle.Add(contentUpdateTestFileName, contentUpdateTestNewInternalBundleName);
-
-            ContentUpdateScript.ContentUpdateContext context = new ContentUpdateScript.ContentUpdateContext()
-            {
-                WriteData = writeData,
-                BundleToInternalBundleIdMap = bundleToInternalBundle,
-                GuidToPreviousAssetStateMap = guidToCachedState,
-                IdToCatalogDataEntryMap = idToCatalogEntryMap,
+                WriteData = new BundleWriteData(),
+                BundleToInternalBundleIdMap = new Dictionary<string, string>(),
+                GuidToPreviousAssetStateMap = new Dictionary<string, CachedAssetState>(),
+                IdToCatalogDataEntryMap = new Dictionary<string, ContentCatalogDataEntry>(),
                 ContentState = new AddressablesContentState(),
                 PreviousAssetStateCarryOver = new List<CachedAssetState>(),
                 Registry = new FileRegistry()
             };
+            AddToContentUpdateContext(context, contentUpdateTestAssetGUID, contentUpdateTestCachedAssetHash,
+                contentUpdateTestNewInternalBundleName, contentUpdateTestNewBundleName, contentUpdateTestCachedBundlePath, contentUpdateTestGroupGuid, contentUpdateTestFileName);
             return context;
+        }
+
+        private void AddToContentUpdateContext(ContentUpdateScript.ContentUpdateContext context, string contentUpdateTestAssetGUID, string contentUpdateTestCachedAssetHash,
+            string contentUpdateTestNewInternalBundleName, string contentUpdateTestNewBundleName, string contentUpdateTestCachedBundlePath, string contentUpdateTestGroupGuid, string contentUpdateTestFileName)
+        {
+            context.BundleToInternalBundleIdMap.Add(contentUpdateTestNewInternalBundleName, contentUpdateTestNewBundleName);
+            context.GuidToPreviousAssetStateMap.Add(contentUpdateTestAssetGUID,
+                new CachedAssetState()
+                {
+                    bundleFileId = contentUpdateTestCachedBundlePath,
+                    asset = new AssetState()
+                    {
+                        guid = new GUID(contentUpdateTestAssetGUID),
+                        hash = Hash128.Parse(contentUpdateTestCachedAssetHash)
+                    },
+                    dependencies = new AssetState[] {},
+                    data = null,
+                    groupGuid = contentUpdateTestGroupGuid
+                }
+            );
+
+            context.IdToCatalogDataEntryMap.Add(contentUpdateTestNewBundleName,
+                new ContentCatalogDataEntry(typeof(IAssetBundleResource), contentUpdateTestNewBundleName, typeof(AssetBundleProvider).FullName, new[] { contentUpdateTestNewBundleName }));
+            context.IdToCatalogDataEntryMap.Add(contentUpdateTestAssetGUID,
+                new ContentCatalogDataEntry(typeof(IAssetBundleResource), contentUpdateTestAssetGUID, typeof(AssetBundleProvider).FullName, new[] { contentUpdateTestAssetGUID }));
+
+            context.WriteData.AssetToFiles.Add(new GUID(contentUpdateTestAssetGUID), new List<string>() { contentUpdateTestFileName });
+            context.WriteData.FileToBundle.Add(contentUpdateTestFileName, contentUpdateTestNewInternalBundleName);
         }
 
         private AddressableAssetEntry CreateAssetEntry(string guid, AddressableAssetGroup group)
@@ -542,6 +702,7 @@ namespace UnityEditor.AddressableAssets.Tests
 
             group.GetSchema<ContentUpdateGroupSchema>().StaticContent = true;
             var assetEntry = CreateAssetEntry(m_ContentUpdateTestAssetGUID, group);
+            assetEntry.m_cachedAssetPath = "path";
             group.AddAssetEntry(assetEntry);
 
             var context = GetContentUpdateContext(m_ContentUpdateTestAssetGUID, k_ContentUpdateTestCachedAssetHash,
@@ -570,6 +731,7 @@ namespace UnityEditor.AddressableAssets.Tests
 
             group.GetSchema<ContentUpdateGroupSchema>().StaticContent = true;
             var assetEntry = CreateAssetEntry(m_ContentUpdateTestAssetGUID, group);
+            assetEntry.m_cachedAssetPath = "path";
             group.AddAssetEntry(assetEntry);
 
             var context = GetContentUpdateContext(m_ContentUpdateTestAssetGUID, k_ContentUpdateTestCachedAssetHash,
@@ -653,6 +815,7 @@ namespace UnityEditor.AddressableAssets.Tests
 
             group.GetSchema<ContentUpdateGroupSchema>().StaticContent = false;
             var assetEntry = CreateAssetEntry(m_ContentUpdateTestAssetGUID, group);
+            assetEntry.m_cachedAssetPath = "path";
             group.AddAssetEntry(assetEntry);
 
             var context = GetContentUpdateContext(m_ContentUpdateTestAssetGUID, k_ContentUpdateTestCachedAssetHash,
@@ -678,6 +841,7 @@ namespace UnityEditor.AddressableAssets.Tests
 
             group.GetSchema<ContentUpdateGroupSchema>().StaticContent = true;
             var assetEntry = CreateAssetEntry(m_ContentUpdateTestAssetGUID, group);
+            assetEntry.m_cachedAssetPath = "path";
             group.AddAssetEntry(assetEntry);
 
             var context = GetContentUpdateContext(m_ContentUpdateTestAssetGUID, k_ContentUpdateTestCachedAssetHash,
@@ -701,6 +865,7 @@ namespace UnityEditor.AddressableAssets.Tests
 
             group.GetSchema<ContentUpdateGroupSchema>().StaticContent = true;
             var assetEntry = CreateAssetEntry(m_ContentUpdateTestAssetGUID, group);
+            assetEntry.m_cachedAssetPath = "path";
             group.AddAssetEntry(assetEntry);
 
             var context = GetContentUpdateContext(m_ContentUpdateTestAssetGUID, k_ContentUpdateTestCachedAssetHash,
@@ -937,6 +1102,98 @@ namespace UnityEditor.AddressableAssets.Tests
             Assert.AreEqual(depBundleFileId + ops[0].AssetEntry.GetHashCode(), ops[0].BundleCatalogEntry.Dependencies[0]);
 
             Settings.RemoveGroup(group);
+        }
+
+        [Test]
+        public void ApplyAssetEntryUpdates_WhenAssetAndDependencyAreModifiedAndInSeparateGroups_SetCatalogEntryToCachedBundles()
+        {
+            GUID depAssetGuid = GUID.Generate();
+            string oldDepGroupCachedAssetHash = "1888888888888888888";
+            string newDepGroupCachedAssetHash = "1188888888888888888";
+            string depGroupNewInternalBundleName = "bundle2";
+            string depGroupNewBundleName = "fullbundlepath2";
+            string depGroupCachedBundlePath = "cachedBundle2";
+            string depGroupFileName = "testfile2";
+
+            AddressableAssetGroup group = Settings.CreateGroup("ContentUpdateTests", false, false, false, null, typeof(BundledAssetGroupSchema), typeof(ContentUpdateGroupSchema));
+            string contentUpdateTestGroupGuid = GUID.Generate().ToString();
+
+            AddressableAssetGroup depGroup = Settings.CreateGroup("ContentUpdateTests2", false, false, false, null, typeof(BundledAssetGroupSchema), typeof(ContentUpdateGroupSchema));
+            GUID depGroupGuid = GUID.Generate();
+
+            group.GetSchema<ContentUpdateGroupSchema>().StaticContent = false;
+            AddressableAssetEntry assetEntry = CreateAssetEntry(m_ContentUpdateTestAssetGUID, group);
+            group.AddAssetEntry(assetEntry);
+
+            depGroup.GetSchema<ContentUpdateGroupSchema>().StaticContent = false;
+            AddressableAssetEntry depAssetEntry = CreateAssetEntry(depAssetGuid.ToString(), depGroup);
+            depGroup.AddAssetEntry(assetEntry);
+
+            ContentUpdateScript.ContentUpdateContext context = GetContentUpdateContext(m_ContentUpdateTestAssetGUID, k_ContentUpdateTestCachedAssetHash,
+                k_ContentUpdateTestNewInternalBundleName, k_ContentUpdateTestNewBundleName,
+                k_ContentUpdateTestCachedBundlePath, contentUpdateTestGroupGuid, k_ContentUpdateTestFileName);
+
+            AddToContentUpdateContext(context, depAssetGuid.ToString(), oldDepGroupCachedAssetHash,
+                depGroupNewInternalBundleName, depGroupNewBundleName,
+                depGroupCachedBundlePath, depGroupGuid.ToString(), depGroupFileName);
+
+            var previousDep = new AssetState()
+            {
+                guid = depAssetGuid,
+                hash = Hash128.Parse(oldDepGroupCachedAssetHash)
+            };
+
+            var currentDep = new AssetState()
+            {
+                guid = GUID.Generate(),
+                hash = Hash128.Parse(newDepGroupCachedAssetHash)
+            };
+
+            context.GuidToPreviousAssetStateMap[m_ContentUpdateTestAssetGUID].dependencies = new AssetState[]
+            {
+                previousDep
+            };
+
+            context.IdToCatalogDataEntryMap[m_ContentUpdateTestAssetGUID].Dependencies.Add(currentDep);
+
+            var ops = new List<RevertUnchangedAssetsToPreviousAssetState.AssetEntryRevertOperation>()
+            {
+                new RevertUnchangedAssetsToPreviousAssetState.AssetEntryRevertOperation()
+                {
+                    PreviousBuildPath = k_ContentUpdateTestCachedBundlePath,
+                    AssetEntry = assetEntry,
+                    BundleCatalogEntry = context.IdToCatalogDataEntryMap[m_ContentUpdateTestAssetGUID],
+                    CurrentBuildPath = k_ContentUpdateTestNewBundleName,
+                    PreviousAssetState = context.GuidToPreviousAssetStateMap[m_ContentUpdateTestAssetGUID]
+                },
+                new RevertUnchangedAssetsToPreviousAssetState.AssetEntryRevertOperation()
+                {
+                    PreviousBuildPath = depGroupCachedBundlePath,
+                    AssetEntry = depAssetEntry,
+                    BundleCatalogEntry = context.IdToCatalogDataEntryMap[depAssetGuid.ToString()],
+                    CurrentBuildPath = depGroupNewBundleName,
+                    PreviousAssetState = context.GuidToPreviousAssetStateMap[depAssetGuid.ToString()]
+                }
+            };
+
+            var locations = new List<ContentCatalogDataEntry>();
+            RevertUnchangedAssetsToPreviousAssetState.ApplyAssetEntryUpdates(ops, "BundleProvider", locations, context);
+
+            Assert.AreEqual(k_ContentUpdateTestCachedBundlePath, context.IdToCatalogDataEntryMap[m_ContentUpdateTestAssetGUID].InternalId);
+            Assert.AreEqual(depGroupCachedBundlePath, context.IdToCatalogDataEntryMap[depAssetGuid.ToString()].InternalId);
+
+            Settings.RemoveGroup(group);
+            Settings.RemoveGroup(depGroup);
+        }
+
+        [Test]
+        [TestCase("{Addressables.RuntimePath}/TargetPlatform/prefabA.bundle", "{Addressables.RuntimePath}/TargetPlatform", "Library/aa/TargetPlatform")]
+        [TestCase("{Addressables.RuntimePath}\\TargetPlatform\\prefabA.bundle", "{Addressables.RuntimePath}/TargetPlatform", "Library/aa/TargetPlatform")]
+        [TestCase("http://localhost/TargetPlatform/prefabA.bundle", "http://localhost/TargetPlatform", "ServerData/TargetPlatform")]
+        public void BundleIdToBuildPath_ReturnsBundleBuildPath(string bundleId, string rootLoadPath, string rootBuildPath)
+        {
+            string buildPath = RevertUnchangedAssetsToPreviousAssetState.BundleIdToBuildPath(bundleId, rootLoadPath, rootBuildPath);
+            Assert.IsTrue(buildPath.StartsWith(rootBuildPath));
         }
     }
 }

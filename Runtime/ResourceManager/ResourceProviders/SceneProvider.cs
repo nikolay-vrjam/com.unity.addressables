@@ -13,7 +13,7 @@ namespace UnityEngine.ResourceManagement.ResourceProviders
     /// <summary>
     /// Implementation if ISceneProvider
     /// </summary>
-    public class SceneProvider : ISceneProvider
+    public class SceneProvider : ISceneProvider2
     {
         class SceneOp : AsyncOperationBase<SceneInstance>, IUpdateReceiver
         {
@@ -46,26 +46,33 @@ namespace UnityEngine.ResourceManagement.ResourceProviders
                 m_Priority = priority;
             }
 
-            internal override bool InvokeWaitForCompletion()
+            ///<inheritdoc />
+            protected override bool InvokeWaitForCompletion()
             {
                 if (m_DepOp.IsValid() && !m_DepOp.IsDone)
                     m_DepOp.WaitForCompletion();
 
-                m_RM?.Update(Time.deltaTime);
+                m_RM?.Update(Time.unscaledDeltaTime);
                 if (!HasExecuted)
                     InvokeExecute();
 
-                //We need the operation to complete but it'll take a frame to activate the scene.
-                m_Inst.m_Operation.allowSceneActivation = false;
+                
                 while (!IsDone)
-                    ((IUpdateReceiver)this).Update(Time.deltaTime);
-
-                //Reset value on scene load operation so we don't activate a scene that a user doesn't want to activate on load.
-                m_Inst.m_Operation.allowSceneActivation = m_ActivateOnLoad;
+                {
+                    ((IUpdateReceiver)this).Update(Time.unscaledDeltaTime);
+                    //We need the operation to complete but it'll take a frame to activate the scene (post 0.9 progress).
+                    if (m_Inst.m_Operation.allowSceneActivation && Mathf.Approximately(m_Inst.m_Operation.progress, .9f))
+                    {
+                        Result = m_Inst;
+                        return true;
+                    }
+                }
+                
                 return IsDone;
             }
 
-            protected override void GetDependencies(List<AsyncOperationHandle> deps)
+            /// <inheritdoc />
+            public override void GetDependencies(List<AsyncOperationHandle> deps)
             {
                 if (m_DepOp.IsValid())
                     deps.Add(m_DepOp);
@@ -85,10 +92,19 @@ namespace UnityEngine.ResourceManagement.ResourceProviders
                             loadingFromBundle = true;
                     }
                 }
-                m_Inst = InternalLoadScene(m_Location, loadingFromBundle, m_LoadMode, m_ActivateOnLoad, m_Priority);
-                ((IUpdateReceiver)this).Update(0.0f);
-                if(!IsDone)
-                    m_ResourceManager.AddUpdateReceiver(this);
+                
+                if (!m_DepOp.IsValid() || m_DepOp.OperationException == null)
+                {
+                    m_Inst = InternalLoadScene(m_Location, loadingFromBundle, m_LoadMode, m_ActivateOnLoad, m_Priority);
+                    ((IUpdateReceiver)this).Update(0.0f);
+                    if (!IsDone)
+                        m_ResourceManager.AddUpdateReceiver(this);
+                }
+                else
+                {
+                    m_ResourceManager.RemoveUpdateReciever(this);
+                    Complete(m_Inst, false, m_DepOp.OperationException);
+                }
                 HasExecuted = true;
             }
 
@@ -151,10 +167,13 @@ namespace UnityEngine.ResourceManagement.ResourceProviders
 
             void IUpdateReceiver.Update(float unscaledDeltaTime)
             {
-                if (m_Inst.m_Operation.isDone || (!m_Inst.m_Operation.allowSceneActivation && m_Inst.m_Operation.progress == .9f))
+                if (m_Inst.m_Operation != null)
                 {
-                    m_ResourceManager.RemoveUpdateReciever(this);
-                    Complete(m_Inst, true, null);
+                    if (m_Inst.m_Operation.isDone || (!m_Inst.m_Operation.allowSceneActivation && Mathf.Approximately(m_Inst.m_Operation.progress, .9f)))
+                    {
+                        m_ResourceManager.RemoveUpdateReciever(this);
+                        Complete(m_Inst, true, null);
+                    }
                 }
             }
         }
@@ -163,24 +182,26 @@ namespace UnityEngine.ResourceManagement.ResourceProviders
         {
             SceneInstance m_Instance;
             AsyncOperationHandle<SceneInstance> m_sceneLoadHandle;
-            public void Init(AsyncOperationHandle<SceneInstance> sceneLoadHandle)
+            UnloadSceneOptions m_UnloadOptions;
+            public void Init(AsyncOperationHandle<SceneInstance> sceneLoadHandle, UnloadSceneOptions options)
             {
                 if (sceneLoadHandle.ReferenceCount > 0)
                 {
                     m_sceneLoadHandle = sceneLoadHandle;
                     m_Instance = m_sceneLoadHandle.Result;
                 }
+                m_UnloadOptions = options;
             }
 
             protected override void Execute()
             {
                 if (m_sceneLoadHandle.IsValid() && m_Instance.Scene.isLoaded)
                 {
-                    var unloadOp = SceneManager.UnloadSceneAsync(m_Instance.Scene);
+                    var unloadOp = SceneManager.UnloadSceneAsync(m_Instance.Scene, m_UnloadOptions);
                     if (unloadOp == null)
-                        UnloadSceneCompleted(null);
+                        UnloadSceneCompletedNoRelease(null);
                     else
-                        unloadOp.completed += UnloadSceneCompleted;
+                        unloadOp.completed += UnloadSceneCompletedNoRelease;
                 }
                 else
                     UnloadSceneCompleted(null);
@@ -188,11 +209,13 @@ namespace UnityEngine.ResourceManagement.ResourceProviders
                 HasExecuted = true;
             }
 
-            internal override bool InvokeWaitForCompletion()
+            ///<inheritdoc />
+            protected override bool InvokeWaitForCompletion()
             {
-                m_RM?.Update(Time.deltaTime);
+                m_RM?.Update(Time.unscaledDeltaTime);
                 if (!HasExecuted)
                     InvokeExecute();
+                Debug.LogWarning("Cannot unload a Scene with WaitForCompletion. Scenes must be unloaded asynchronously.");
                 return true;
             }
 
@@ -201,6 +224,11 @@ namespace UnityEngine.ResourceManagement.ResourceProviders
                 Complete(m_Instance, true, "");
                 if (m_sceneLoadHandle.IsValid())
                     m_sceneLoadHandle.Release();
+            }
+            
+            private void UnloadSceneCompletedNoRelease(AsyncOperation obj)
+            {
+                Complete(m_Instance, true, "");
             }
 
             protected override float Progress
@@ -230,8 +258,14 @@ namespace UnityEngine.ResourceManagement.ResourceProviders
         /// <inheritdoc/>
         public AsyncOperationHandle<SceneInstance> ReleaseScene(ResourceManager resourceManager, AsyncOperationHandle<SceneInstance> sceneLoadHandle)
         {
+            return ((ISceneProvider2)(this)).ReleaseScene(resourceManager, sceneLoadHandle, UnloadSceneOptions.None);
+        }
+
+        /// <inheritdoc/>
+        AsyncOperationHandle<SceneInstance> ISceneProvider2.ReleaseScene(ResourceManager resourceManager, AsyncOperationHandle<SceneInstance> sceneLoadHandle, UnloadSceneOptions unloadOptions)
+        {
             var unloadOp = new UnloadSceneOp();
-            unloadOp.Init(sceneLoadHandle);
+            unloadOp.Init(sceneLoadHandle, unloadOptions);
             return resourceManager.StartOperation(unloadOp, sceneLoadHandle);
         }
     }

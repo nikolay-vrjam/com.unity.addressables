@@ -9,6 +9,7 @@ using UnityEngine.ResourceManagement.Util;
 using UnityEngine.TestTools;
 using System.Linq;
 using UnityEngine.Networking;
+using UnityEngine.ResourceManagement.Exceptions;
 using UnityEngine.TestTools.Constraints;
 
 namespace UnityEngine.ResourceManagement.Tests
@@ -65,6 +66,47 @@ namespace UnityEngine.ResourceManagement.Tests
             ur.invoked = false;
             m_ResourceManager.Update(0);
             Assert.IsFalse(ur.invoked);
+        }
+
+        class RMTestOp : AsyncOperationBase<object>
+        {
+            public int CompletedEventTriggeredCount = 0;
+
+            protected override void Execute()
+            {
+                m_RM.RegisterForDeferredCallback(this);
+            }
+
+            protected override bool InvokeWaitForCompletion() 
+            {
+                m_RM.Update(1);
+                return true; 
+            }
+        }
+        class RMTestUpdateReceiver : IUpdateReceiver
+        {
+            public int UpdateCount = 0;
+            public void Update(float unscaledDeltaTime)
+            {
+                UpdateCount++;
+            }
+        }
+        [Test]
+        public void Reentering_UpdateMethod_ThrowsException()
+        {
+            var op = new RMTestOp();
+            op.Completed += o =>
+            {
+                (o.m_InternalOp as RMTestOp).CompletedEventTriggeredCount++;
+                Assert.Throws<Exception>(() => o.WaitForCompletion());
+            };
+            var rec = new RMTestUpdateReceiver();
+            m_ResourceManager.AddUpdateReceiver(rec);
+            m_ResourceManager.StartOperation(op, default);
+            op.WaitForCompletion();
+            m_ResourceManager.RemoveUpdateReciever(rec);
+            Assert.AreEqual(1, op.CompletedEventTriggeredCount);
+            Assert.AreEqual(1, rec.UpdateCount);
         }
 
         class TestUpdateReceiverThatRemovesSelfDuringUpdate : IUpdateReceiver
@@ -257,6 +299,42 @@ namespace UnityEngine.ResourceManagement.Tests
         }
 
         [UnityTest]
+        public IEnumerator ProvideResource_WhenRemote_ExceptionHandlerReceivesExceptionWithWebRequestError()
+        {
+            m_ResourceManager.ResourceProviders.Add(new AssetBundleProvider());
+
+            ResourceLocationBase location = new ResourceLocationBase("nonExistingResource", "http://urlThatCantPossiblyExistsaaaaaaaa.com/bundleName.bundle",
+                typeof(AssetBundleProvider).FullName, typeof(IAssetBundleResource));
+            location.Data = new AssetBundleRequestOptions()
+            {
+                BundleName = "bundleName",
+                Timeout = 0
+            };
+
+            var prevHandler = ResourceManager.ExceptionHandler;
+
+            bool exceptionWithRequestResultReceived = false;
+            ResourceManager.ExceptionHandler += (h, ex) =>
+            {
+                exceptionWithRequestResultReceived |= ex is RemoteProviderException pEx && pEx.WebRequestResult != null;
+            };
+
+            AsyncOperationHandle<IAssetBundleResource> handle;
+
+            using (new IgnoreFailingLogMessage())
+            {
+                handle = m_ResourceManager.ProvideResource<IAssetBundleResource>(location);
+                yield return handle;
+            }
+
+            ResourceManager.ExceptionHandler = prevHandler;
+            Assert.AreEqual(AsyncOperationStatus.Failed, handle.Status);
+            Assert.IsTrue(exceptionWithRequestResultReceived);
+
+            handle.Release();
+        }
+
+        [UnityTest]
         public IEnumerator WebRequestQueue_CompletesAllOperations()
         {
             int numberOfCompletedOperations = 0;
@@ -277,5 +355,18 @@ namespace UnityEngine.ResourceManagement.Tests
 
             Assert.AreEqual(totalOperations, numberOfCompletedOperations);
         }
+
+#if UNITY_EDITOR
+        [Test]
+        public void AssetDatabaseProvider_LoadAssetAtPath_WhenNotInAssetDatabase_DoesNotThrow()
+        {
+            var loc = new ResourceLocationBase("name", "id", "providerId", typeof(object));
+            ProviderOperation<Object> op = new ProviderOperation<Object>();
+            op.Init(m_ResourceManager, null, loc, new AsyncOperationHandle<IList<AsyncOperationHandle>>());
+            ProvideHandle handle = new ProvideHandle(m_ResourceManager, op);
+
+            Assert.DoesNotThrow(() => AssetDatabaseProvider.LoadAssetAtPath("doesnotexist", handle));
+        }
+#endif
     }
 }
