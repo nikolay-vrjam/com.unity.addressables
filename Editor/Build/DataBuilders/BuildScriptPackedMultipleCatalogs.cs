@@ -62,6 +62,8 @@ namespace UnityEditor.AddressableAssets.Build.DataBuilders
 			}
 
 			// Assign assets to new catalogs based on included groups
+			var profileSettings = aaContext.Settings.profileSettings;
+			var profileId = aaContext.Settings.activeProfileId;
 			foreach (var loc in aaContext.locations)
 			{
 				CatalogSetup preferredCatalog = catalogSetups.FirstOrDefault(cs => cs.CatalogContentGroup.IsPartOfCatalog(loc, aaContext));
@@ -71,6 +73,7 @@ namespace UnityEditor.AddressableAssets.Build.DataBuilders
 					{
 						string filePath = Path.GetFullPath(loc.InternalId.Replace("{UnityEngine.AddressableAssets.Addressables.RuntimePath}", Addressables.BuildPath));
 						string runtimeLoadPath = preferredCatalog.CatalogContentGroup.RuntimeLoadPath + "/" + Path.GetFileName(filePath);
+						runtimeLoadPath = profileSettings.EvaluateString(profileId, runtimeLoadPath);
 
 						preferredCatalog.Files.Add(filePath);
 						preferredCatalog.BuildInfo.Locations.Add(new ContentCatalogDataEntry(typeof(IAssetBundleResource), runtimeLoadPath, loc.Provider, loc.Keys, loc.Dependencies, loc.Data));
@@ -85,6 +88,7 @@ namespace UnityEditor.AddressableAssets.Build.DataBuilders
 					defaultCatalog.Locations.Add(loc);
 				}
 			}
+
 
 			// Process dependencies
 			foreach (CatalogSetup additionalCatalog in catalogSetups)
