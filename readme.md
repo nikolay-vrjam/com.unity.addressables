@@ -4,6 +4,8 @@ The Addressables package by Unity provides a novel way of managing and packing a
 
 This variant forked from the original Addressables-project adds support for building your assets across several catalogs in one go and provides several other benefits, e.g. reduced build times and build size, as well as keeping the buildcache intact.
 
+**Note**: this repository does not track every available version of the _vanilla_ Addressables package. It's only kept up-to-date sporadically.
+
 ## The problem
 
 A frequently recurring question is:
@@ -16,7 +18,7 @@ The answer to that question largely depends on how you define what DLC means for
 
 So, does Addressables support DLC packages as defined above? Yes, it's supported, but in a very crude and inefficient way.
 
-In the _vanilla_ implementation of Addressables, only one content catalog file is built at a time, and only the assets as defined to be included in the current build will be packed and saved. Any implicit dependency of an asset will get included in that build too, however. This creates several major problems:
+In the vanilla implementation of Addressables, only one content catalog file is built at a time, and only the assets as defined to be included in the current build will be packed and saved. Any implicit dependency of an asset will get included in that build too, however. This creates several major problems:
 
 * Each build (one for the base game, and one for each DLC package) will include each and every asset it relies on. This is expected for the base game, but not for the DLC package. This essentially creates unnecessary large DLC packages, and in the end, your running game will include the same assets multiple times on the player's system, and perhaps even in memory at runtime.
 * No build caching can be used, since each build done for a DLC package is considered a whole new build for the Addressables system, and will invalidate any prior caching done. This significantly increases build times.
@@ -24,15 +26,13 @@ In the _vanilla_ implementation of Addressables, only one content catalog file i
 
 ## The solution
 
-The solution comes in the form of performing the build process of the base game and all DLC packages in one step. In essence, what this implementation does is, have the Addressables build-pipeline perform one large build all all assets tracked for the base game and each of its DLC packages, and afterwards, extract the contents per defined DLC package and create a separate content catalog for each of them. Finally, Addressables creates the final content catalog file for the left-over asset groups, those that remain for the base game.
+The solution comes in the form of performing the build process of the base game and all DLC packages in one step. In essence, what this implementation does is, have the Addressables build-pipeline perform one large build of all assets tracked by the base game and each of its DLC packages, and afterwards, extract the contents per defined DLC package and create a separate content catalog for each of them. Finally, Addressables creates the final content catalog file for the left-over asset groups, those that remain for the base game.
 
 ## Installation
 
 This package is best installed using Unity's Package Manager. Fill in the URL found below in the package manager's input field for git-tracked packages:
 
 > https://github.com/juniordiscart/com.unity.addressables.git
-
-**Note**: this repository does not track every available version of the vanilla Addressables package. It's only kept up-to-date sporadically.
 
 ### Updating a vanilla installation
 
@@ -79,10 +79,10 @@ With the multi-catalog system installed, additional catalogs can now be created 
 
 With everything set up and configured, it's time to build the project's contents!
 
-In your Addressable Groups window, tick all 'Include in build' boxes of those groups that should be build. From the build tab, there's a new `Default build script - Multi-Catalog` build option. Select this one to start a content build with the multi-catalog setup.
+In your Addressable Groups window, tick all 'Include in build' boxes of those groups that should be built. From the build tab, there's a new `Default build script - Multi-Catalog` option. Select this one to start a content build with the multi-catalog setup.
 
 ## Loading the external catalogs
 
 When you need to load in the assets put aside in these external packages, you can do so using:
 
-> `Addressables.LoadContentCatalogAsync("catalogName.json");`
+> `Addressables.LoadContentCatalogAsync("path/to/dlc/catalogName.json");`
