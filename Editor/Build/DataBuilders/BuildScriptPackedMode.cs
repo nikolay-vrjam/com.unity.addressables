@@ -306,13 +306,12 @@ namespace UnityEditor.AddressableAssets.Build.DataBuilders
 					var resultValue = r.Value;
 					m_Linker.AddTypes(resultValue.includedTypes);
 #if UNITY_2021_1_OR_NEWER
-                    m_Linker.AddSerializedClass(resultValue.includedSerializeReferenceFQN);
+					m_Linker.AddSerializedClass(resultValue.includedSerializeReferenceFQN);
 #else
 					if (resultValue.GetType().GetProperty("includedSerializeReferenceFQN") != null)
 						m_Linker.AddSerializedClass(resultValue.GetType().GetProperty("includedSerializeReferenceFQN").GetValue(resultValue) as System.Collections.Generic.IEnumerable<string>);
 #endif
 				}
-
 
 				if (ProjectConfigData.GenerateBuildLayout)
 				{
@@ -718,9 +717,9 @@ namespace UnityEditor.AddressableAssets.Build.DataBuilders
 			}
 
 #if UNITY_2022_1_OR_NEWER
-           string loadPath = schema.LoadPath.GetValue(aaContext.Settings);
-           if (loadPath.StartsWith("http://") && PlayerSettings.insecureHttpOption == InsecureHttpOption.NotAllowed)
-                Addressables.LogWarning($"Addressable group {assetGroup.Name} uses insecure http for its load path.  To allow http connections for UnityWebRequests, change your settings in Edit > Project Settings > Player > Other Settings > Configuration > Allow downloads over HTTP.");
+		   string loadPath = schema.LoadPath.GetValue(aaContext.Settings);
+		   if (loadPath.StartsWith("http://") && PlayerSettings.insecureHttpOption == InsecureHttpOption.NotAllowed)
+				Addressables.LogWarning($"Addressable group {assetGroup.Name} uses insecure http for its load path.  To allow http connections for UnityWebRequests, change your settings in Edit > Project Settings > Player > Other Settings > Configuration > Allow downloads over HTTP.");
 #endif
 			if (schema.Compression == BundledAssetGroupSchema.BundleCompressionMode.LZMA && aaContext.runtimeData.BuildTarget == BuildTarget.WebGL.ToString())
 				Addressables.LogWarning($"Addressable group {assetGroup.Name} uses LZMA compression, which cannot be decompressed on WebGL. Use LZ4 compression instead.");
