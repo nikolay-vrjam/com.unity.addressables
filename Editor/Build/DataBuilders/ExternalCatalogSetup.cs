@@ -43,7 +43,7 @@ namespace UnityEditor.AddressableAssets.Build.DataBuilders
 		public IReadOnlyList<AddressableAssetGroup> AssetGroups
 		{
 			get { return assetGroups; }
-			set { new List<AddressableAssetGroup>(value); }
+			set { assetGroups = new List<AddressableAssetGroup>(value); }
 		}
 
 		public bool IsPartOfCatalog(ContentCatalogDataEntry loc, AddressableAssetsBuildContext aaContext)
