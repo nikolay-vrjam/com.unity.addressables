@@ -514,7 +514,14 @@ namespace UnityEditor.AddressableAssets.GUI
 		public void Reload()
 		{
 			if (m_EntryTree != null)
+			{
+				if (settings != AddressableAssetSettingsDefaultObject.Settings)
+				{
+					settings = AddressableAssetSettingsDefaultObject.Settings;
+				}
+
 				m_EntryTree.Reload();
+			}
 		}
 
 		void HandleVerticalResize(Rect position)
