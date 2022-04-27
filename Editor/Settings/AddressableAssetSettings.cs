@@ -2091,7 +2091,7 @@ namespace UnityEditor.AddressableAssets.Settings
 
 		internal void RemoveGroupInternal(AddressableAssetGroup g, bool deleteAsset, bool postEvent)
 		{
-			g?.ClearSchemas(true);
+			g?.ClearSchemas(deleteAsset);
 			groups.Remove(g);
 			SetDirty(ModificationEvent.GroupRemoved, g, postEvent, true);
 			if (g != null && deleteAsset)

@@ -364,7 +364,7 @@ namespace UnityEditor.AddressableAssets.GUI
 				return g0.Name.CompareTo(g1.Name);
 			});
 
-			EditorUtility.SetDirty(settings);
+			settings.SetDirty(AddressableAssetSettings.ModificationEvent.GroupMoved, settings.groups, true, true);
 			Reload();
 		}
 
