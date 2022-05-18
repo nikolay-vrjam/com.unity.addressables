@@ -11,6 +11,8 @@ namespace UnityEditor.AddressableAssets
 	/// </summary>
 	public class AddressableAssetSettingsDefaultObject : ScriptableObject
 	{
+		public static Action<AddressableAssetSettings> onDefaultObjectsettingsChanged;
+
 		/// <summary>
 		/// Default name for the addressable assets settings
 		/// </summary>
@@ -113,6 +115,7 @@ namespace UnityEditor.AddressableAssets
 					if (EditorBuildSettings.TryGetConfigObject(kDefaultConfigObjectName, out so))
 					{
 						s_DefaultSettingsObject = so.LoadSettingsObject();
+						InvokeUpdateEvent(s_DefaultSettingsObject);
 					}
 					else
 					{
@@ -127,8 +130,10 @@ namespace UnityEditor.AddressableAssets
 							AddressableAssetUtility.OpenAssetIfUsingVCIntegration(kDefaultConfigFolder + "/DefaultObject.asset");
 							AssetDatabase.SaveAssets();
 							EditorBuildSettings.AddConfigObject(kDefaultConfigObjectName, so, true);
+							InvokeUpdateEvent(s_DefaultSettingsObject);
 						}
 					}
+
 				}
 				return s_DefaultSettingsObject;
 			}
@@ -157,6 +162,7 @@ namespace UnityEditor.AddressableAssets
 				EditorUtility.SetDirty(so);
 				AddressableAssetUtility.OpenAssetIfUsingVCIntegration(kDefaultConfigFolder + "/DefaultObject.asset");
 				AssetDatabase.SaveAssets();
+				InvokeUpdateEvent(s_DefaultSettingsObject);
 			}
 		}
 
@@ -171,6 +177,14 @@ namespace UnityEditor.AddressableAssets
 				Settings = AddressableAssetSettings.Create(kDefaultConfigFolder, kDefaultConfigAssetName, true, true);
 			return Settings;
 		}
+
+		private static void InvokeUpdateEvent(AddressableAssetSettings settings)
+		{
+			if (onDefaultObjectsettingsChanged != null)
+			{
+				onDefaultObjectsettingsChanged(settings);
+			}
+		}
 	}
 
 	[CustomEditor(typeof(AddressableAssetSettingsDefaultObject))]
@@ -181,19 +195,6 @@ namespace UnityEditor.AddressableAssets
 		private AddressableAssetSettingsDefaultObject Target
 		{
 			get => this.target as AddressableAssetSettingsDefaultObject;
-		}
-
-		private void OnEnable()
-		{
-			string assetGuid = Target.m_AddressableAssetSettingsGuid;
-			if (!string.IsNullOrEmpty(assetGuid))
-			{
-				string assetPath = AssetDatabase.GUIDToAssetPath(assetGuid);
-				if (!string.IsNullOrEmpty(assetPath))
-				{
-					settings = AssetDatabase.LoadAssetAtPath<AddressableAssetSettings>(assetPath);
-				}
-			}
 		}
 
 		public override void OnInspectorGUI()
@@ -214,6 +215,31 @@ namespace UnityEditor.AddressableAssets
 			}
 
 			EditorGUILayout.EndVertical();
+		}
+
+		private void OnEnable()
+		{
+			AddressableAssetSettingsDefaultObject.onDefaultObjectsettingsChanged += OnDefaultObjectChanged;
+
+			string assetGuid = Target.m_AddressableAssetSettingsGuid;
+			if (!string.IsNullOrEmpty(assetGuid))
+			{
+				string assetPath = AssetDatabase.GUIDToAssetPath(assetGuid);
+				if (!string.IsNullOrEmpty(assetPath))
+				{
+					settings = AssetDatabase.LoadAssetAtPath<AddressableAssetSettings>(assetPath);
+				}
+			}
+		}
+
+		private void OnDisable()
+		{
+			AddressableAssetSettingsDefaultObject.onDefaultObjectsettingsChanged -= OnDefaultObjectChanged;
+		}
+
+		private void OnDefaultObjectChanged(AddressableAssetSettings settings)
+		{
+			this.settings = settings;
 		}
 	}
 }

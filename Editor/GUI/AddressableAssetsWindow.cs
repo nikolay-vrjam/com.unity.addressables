@@ -65,11 +65,15 @@ namespace UnityEditor.AddressableAssets.GUI
 			{
 				m_Request = PackageManager.Client.Search("com.unity.addressables");
 			}
+
+			AddressableAssetSettingsDefaultObject.onDefaultObjectsettingsChanged += ReloadWindow;
 		}
 
 		public void OnDisable()
 		{
 			m_GroupEditor?.OnDisable();
+
+			AddressableAssetSettingsDefaultObject.onDefaultObjectsettingsChanged -= ReloadWindow;
 		}
 
 		internal void OfferToConvert(AddressableAssetSettings settings)
@@ -187,6 +191,11 @@ namespace UnityEditor.AddressableAssets.GUI
 			{
 				Application.OpenURL(m_HelpUrl);
 			}
+		}
+
+		private void ReloadWindow(AddressableAssetSettings settings)
+		{
+			m_GroupEditor?.Reload();
 		}
 	}
 }
