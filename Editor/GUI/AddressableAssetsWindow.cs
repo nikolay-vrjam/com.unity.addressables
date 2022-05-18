@@ -195,7 +195,14 @@ namespace UnityEditor.AddressableAssets.GUI
 
 		private void ReloadWindow(AddressableAssetSettings settings)
 		{
-			m_GroupEditor?.Reload();
+			if (settings == null)
+			{
+				m_GroupEditor = null;
+			}
+			else if (m_GroupEditor != null)
+			{
+				m_GroupEditor.Reload();
+			}
 		}
 	}
 }
