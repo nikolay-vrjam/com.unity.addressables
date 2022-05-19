@@ -25,6 +25,7 @@ namespace UnityEditor.AddressableAssets.GUI
 
 		enum ColumnId
 		{
+			Notification,
 			Id,
 			Type,
 			Path,
@@ -32,6 +33,7 @@ namespace UnityEditor.AddressableAssets.GUI
 		}
 		ColumnId[] m_SortOptions =
 		{
+			ColumnId.Notification,
 			ColumnId.Id,
 			ColumnId.Type,
 			ColumnId.Path,
@@ -48,12 +50,24 @@ namespace UnityEditor.AddressableAssets.GUI
 		{
 			showBorder = true;
 			m_Editor = ed;
-			columnIndexForTreeFoldouts = 0;
+			columnIndexForTreeFoldouts = 1;
 			multiColumnHeader.sortingChanged += OnSortingChanged;
 
 			BuiltinSceneCache.sceneListChanged += OnScenesChanged;
-            AddressablesAssetPostProcessor.OnPostProcess.Register(OnPostProcessAllAssets, 1);
+			AddressablesAssetPostProcessor.OnPostProcess.Register(OnPostProcessAllAssets, 1);
 		}
+
+		GUIContent m_WarningIcon;
+		GUIContent WarningIcon
+		{
+			get
+			{
+				if (m_WarningIcon == null)
+					m_WarningIcon = EditorGUIUtility.IconContent("console.warnicon.sml");
+				return m_WarningIcon;
+			}
+		}
+
 
 		internal TreeViewItem Root => rootItem;
 
@@ -312,6 +326,7 @@ namespace UnityEditor.AddressableAssets.GUI
 			IEnumerable<AssetEntryTreeViewItem> orderedKids = kids;
 			switch (col)
 			{
+				case ColumnId.Notification:
 				case ColumnId.Type:
 					break;
 				case ColumnId.Path:
@@ -544,27 +559,21 @@ namespace UnityEditor.AddressableAssets.GUI
 			if (item == null || item.group == null && item.entry == null)
 			{
 				using (new EditorGUI.DisabledScope(true))
-				{
 					base.RowGUI(args);
-				}
 			}
-			else if (item.group != null)
+			else
 			{
-				if (item.isRenaming && !args.isRenaming)
-					item.isRenaming = false;
-				using (new EditorGUI.DisabledScope(item.group.ReadOnly))
+				bool isReadOnly = item.group == null ? item.entry.ReadOnly : item.group.ReadOnly;
+				if (item.group != null)
 				{
-					base.RowGUI(args);
+					if (item.isRenaming && !args.isRenaming)
+						item.isRenaming = false;
 				}
-			}
-			else if (item.entry != null && !args.isRenaming)
-			{
-				using (new EditorGUI.DisabledScope(item.entry.ReadOnly))
+
+				using (new EditorGUI.DisabledScope(isReadOnly))
 				{
 					for (int i = 0; i < args.GetNumVisibleColumns(); ++i)
-					{
 						CellGUI(args.GetCellRect(i), item, args.GetColumn(i), ref args);
-					}
 				}
 			}
 		}
@@ -575,18 +584,29 @@ namespace UnityEditor.AddressableAssets.GUI
 
 			switch ((ColumnId)column)
 			{
+				case ColumnId.Notification:
+					bool flaggedForUpdateWarning = item.entry == null ? item.group.FlaggedDuringContentUpdateRestriction : item.entry.FlaggedDuringContentUpdateRestriction;
+					if (flaggedForUpdateWarning)
+					{
+						var notification = WarningIcon;
+						if (item.group != null)
+							notification.tooltip = "This group contains assets with the setting �Prevent Updates� that have been modified. " +
+								"To resolve, change the group setting, or move the assets to a different group.";
+						else if (item.entry != null)
+							notification.tooltip = "This asset has been modified, but it is in a group with the setting �Prevent Updates�. " +
+								"To resolve, change the group setting, or move the asset to a different group.";
+						UnityEngine.GUI.Label(cellRect, notification);
+					}
+					break;
+
 				case ColumnId.Id:
 					{
-						// The rect is assumed indented and sized after the content when pinging
-						float indent = GetContentIndent(item) + extraSpaceBeforeIconAndLabel;
-						cellRect.xMin += indent;
-
-						if (Event.current.type == EventType.Repaint)
-							m_LabelStyle.Draw(cellRect, item.entry.address, false, false, args.selected, args.focused);
+						args.rowRect = cellRect;
+						base.RowGUI(args);
 					}
 					break;
 				case ColumnId.Path:
-					if (Event.current.type == EventType.Repaint)
+					if (item.entry != null && Event.current.type == EventType.Repaint)
 					{
 						var path = item.entry.AssetPath;
 						if (string.IsNullOrEmpty(path))
@@ -599,7 +619,7 @@ namespace UnityEditor.AddressableAssets.GUI
 						UnityEngine.GUI.DrawTexture(cellRect, item.assetIcon, ScaleMode.ScaleToFit, true);
 					break;
 				case ColumnId.Labels:
-					if (EditorGUI.DropdownButton(cellRect, new GUIContent(m_Editor.settings.labelTable.GetString(item.entry.labels, cellRect.width)), FocusType.Passive))
+					if (item.entry != null && EditorGUI.DropdownButton(cellRect, new GUIContent(m_Editor.settings.labelTable.GetString(item.entry.labels, cellRect.width)), FocusType.Passive))
 					{
 						var selection = GetItemsForContext(args.item.id);
 						Dictionary<string, int> labelCounts = new Dictionary<string, int>();
@@ -651,11 +671,20 @@ namespace UnityEditor.AddressableAssets.GUI
 				new MultiColumnHeaderState.Column(),
 				new MultiColumnHeaderState.Column(),
 				new MultiColumnHeaderState.Column(),
-				new MultiColumnHeaderState.Column()
-                //new MultiColumnHeaderState.Column(),
-            };
+				new MultiColumnHeaderState.Column(),
+				new MultiColumnHeaderState.Column(),
+			};
 
 			int counter = 0;
+
+			retVal[counter].headerContent = new GUIContent(EditorGUIUtility.FindTexture("_Help@2x"), "Notifications");
+			retVal[counter].minWidth = 25;
+			retVal[counter].width = 25;
+			retVal[counter].maxWidth = 25;
+			retVal[counter].headerTextAlignment = TextAlignment.Left;
+			retVal[counter].canSort = false;
+			retVal[counter].autoResize = true;
+			counter++;
 
 			retVal[counter].headerContent = new GUIContent("Group Name \\ Addressable Name", "Address used to load asset at runtime");
 			retVal[counter].minWidth = 100;
@@ -818,6 +847,21 @@ namespace UnityEditor.AddressableAssets.GUI
 				Assert.IsNotNull(templateObject);
 				menu.AddItem(new GUIContent("Create New Group/" + templateObject.name), false, CreateNewGroup, templateObject);
 			}
+
+			menu.AddItem(new GUIContent("Clear Content Update Warnings"), false, ClearContentUpdateWarnings);
+		}
+
+		void ClearContentUpdateWarnings()
+		{
+			foreach (var group in m_Editor.settings.groups)
+			{
+				if (group.FlaggedDuringContentUpdateRestriction)
+				{
+					foreach (var entry in group.entries)
+						entry.FlaggedDuringContentUpdateRestriction = false;
+				}
+			}
+			Reload();
 		}
 
 		void HandleCustomContextMenuItemGroups(object context)
@@ -1132,10 +1176,18 @@ namespace UnityEditor.AddressableAssets.GUI
 			if (selectedNodes == null || selectedNodes.Count < 1)
 				return;
 			var groups = new List<AddressableAssetGroup>();
-			foreach (var item in selectedNodes)
+			AssetDatabase.StartAssetEditing();
+			try
 			{
-				m_Editor.settings.RemoveGroupInternal(item == null ? null : item.group, deleteAsset, false);
-				groups.Add(item.group);
+				foreach (var item in selectedNodes)
+				{
+					m_Editor.settings.RemoveGroupInternal(item == null ? null : item.group, deleteAsset, false);
+					groups.Add(item.group);
+				}
+			}
+			finally
+			{
+				AssetDatabase.StopAssetEditing();
 			}
 
 			m_Editor.settings.SetDirty(AddressableAssetSettings.ModificationEvent.GroupRemoved, groups, true, true);
