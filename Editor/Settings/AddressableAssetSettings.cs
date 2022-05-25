@@ -32,78 +32,78 @@ namespace UnityEditor.AddressableAssets.Settings
 	/// </summary>
 	public class AddressableAssetSettings : ScriptableObject
 	{
-        internal class Cache<T1, T2>
-        {
-            private AddressableAssetSettings m_Settings;
-            private Hash128 m_CurrentCacheVersion;
-            private Dictionary<T1, T2> m_TargetInfoCache = new Dictionary<T1, T2>();
+		internal class Cache<T1, T2>
+		{
+			private AddressableAssetSettings m_Settings;
+			private Hash128 m_CurrentCacheVersion;
+			private Dictionary<T1, T2> m_TargetInfoCache = new Dictionary<T1, T2>();
 
-            public Cache(AddressableAssetSettings settings)
-            {
-                m_Settings = settings;
-            }
+			public Cache(AddressableAssetSettings settings)
+			{
+				m_Settings = settings;
+			}
 
-            public bool TryGetCached(T1 key, out T2 result)
-            {
-                if (IsValid() && m_TargetInfoCache.TryGetValue(key, out result))
-                    return true;
-                
-                result = default;
-                return false;
-            }
+			public bool TryGetCached(T1 key, out T2 result)
+			{
+				if (IsValid() && m_TargetInfoCache.TryGetValue(key, out result))
+					return true;
 
-            public void Add(T1 key, T2 value)
-            {
-                if (!IsValid())
-                    m_CurrentCacheVersion = m_Settings.currentHash;
-                m_TargetInfoCache.Add(key, value);
-            }
+				result = default;
+				return false;
+			}
 
-            private bool IsValid()
-            {
-                if (m_TargetInfoCache.Count > 0)
-                {
-                    if (!m_CurrentCacheVersion.isValid || m_CurrentCacheVersion.Equals(m_Settings.currentHash) == false)
-                    {
-                        m_TargetInfoCache.Clear();
-                        m_CurrentCacheVersion = default;
-                        return false;
-                    }
-                    return true;
-                }
-                return false;
-            }
-        }
-        
-        private Cache<string, AddressableAssetEntry> m_FindAssetEntryCache = null;
-        
+			public void Add(T1 key, T2 value)
+			{
+				if (!IsValid())
+					m_CurrentCacheVersion = m_Settings.currentHash;
+				m_TargetInfoCache.Add(key, value);
+			}
+
+			private bool IsValid()
+			{
+				if (m_TargetInfoCache.Count > 0)
+				{
+					if (!m_CurrentCacheVersion.isValid || m_CurrentCacheVersion.Equals(m_Settings.currentHash) == false)
+					{
+						m_TargetInfoCache.Clear();
+						m_CurrentCacheVersion = default;
+						return false;
+					}
+					return true;
+				}
+				return false;
+			}
+		}
+
+		private Cache<string, AddressableAssetEntry> m_FindAssetEntryCache = null;
+
 		[InitializeOnLoadMethod]
 		static void RegisterWithAssetPostProcessor()
 		{
 			//if the Library folder has been deleted, this will be null and it will have to be set on the first access of the settings object
 			if (AddressableAssetSettingsDefaultObject.Settings != null)
-                AddressablesAssetPostProcessor.OnPostProcess.Register(AddressableAssetSettingsDefaultObject.Settings.OnPostprocessAllAssets, 0);
+				AddressablesAssetPostProcessor.OnPostProcess.Register(AddressableAssetSettingsDefaultObject.Settings.OnPostprocessAllAssets, 0);
 			else
 				EditorApplication.update += TryAddAssetPostprocessorOnNextUpdate;
 		}
 
-        [InitializeOnLoadMethod]
-        static void CheckCCDStatus()
-        {
+		[InitializeOnLoadMethod]
+		static void CheckCCDStatus()
+		{
 #if !ENABLE_CCD
-            if (AddressableAssetSettingsDefaultObject.Settings != null && AddressableAssetSettingsDefaultObject.Settings.CCDEnabled)
-            {
-                AddressableAssetSettingsDefaultObject.Settings.CCDEnabled = false;
-                Debug.LogError("This version of Addressables no longer supports integration with the current installed version of the CCD package. " +
-                    "Please upgrade the CCD package to continue using the integration. Or, re-enable the Enable CCD Integration toggle in the AddressableAssetSettings.");
-            }
+			if (AddressableAssetSettingsDefaultObject.Settings != null && AddressableAssetSettingsDefaultObject.Settings.CCDEnabled)
+			{
+				AddressableAssetSettingsDefaultObject.Settings.CCDEnabled = false;
+				Debug.LogError("This version of Addressables no longer supports integration with the current installed version of the CCD package. " +
+					"Please upgrade the CCD package to continue using the integration. Or, re-enable the Enable CCD Integration toggle in the AddressableAssetSettings.");
+			}
 #endif
-        }
+		}
 
 		private static void TryAddAssetPostprocessorOnNextUpdate()
 		{
 			if (AddressableAssetSettingsDefaultObject.Settings != null)
-                AddressablesAssetPostProcessor.OnPostProcess.Register(AddressableAssetSettingsDefaultObject.Settings.OnPostprocessAllAssets, 0);
+				AddressablesAssetPostProcessor.OnPostProcess.Register(AddressableAssetSettingsDefaultObject.Settings.OnPostprocessAllAssets, 0);
 			EditorApplication.update -= TryAddAssetPostprocessorOnNextUpdate;
 		}
 
@@ -458,7 +458,7 @@ namespace UnityEditor.AddressableAssets.Settings
 
 		[SerializeField]
 #if UNITY_2021_1_OR_NEWER
-        bool m_NonRecursiveBuilding = true;
+		bool m_NonRecursiveBuilding = true;
 #else
 		bool m_NonRecursiveBuilding = false;
 #endif
@@ -479,7 +479,7 @@ namespace UnityEditor.AddressableAssets.Settings
 #endif
 
 		[SerializeField]
-        int m_maxConcurrentWebRequests = 3;
+		int m_maxConcurrentWebRequests = 3;
 
 		/// <summary>
 		/// The maximum time to download hash and json catalog files before a timeout error.
@@ -510,7 +510,7 @@ namespace UnityEditor.AddressableAssets.Settings
 
 		[SerializeField]
 #if UNITY_2021_1_OR_NEWER
-        bool m_ContiguousBundles = true;
+		bool m_ContiguousBundles = true;
 #else
 		bool m_ContiguousBundles = false;
 #endif
@@ -637,17 +637,17 @@ namespace UnityEditor.AddressableAssets.Settings
 		}
 
 		[SerializeField]
-        CheckForContentUpdateRestrictionsOptions m_CheckForContentUpdateRestrictionsOption = CheckForContentUpdateRestrictionsOptions.ListUpdatedAssetsWithRestrictions;
+		CheckForContentUpdateRestrictionsOptions m_CheckForContentUpdateRestrictionsOption = CheckForContentUpdateRestrictionsOptions.ListUpdatedAssetsWithRestrictions;
 
-        /// <summary>
-        /// Informs the Addressable system how to handle checking for Content Update Restrictions during a Content Update build.
-        /// During this check, assets are flagged that have changed, yet are contained in a Group that has the Cannot Change Post Release option set.
-        /// </summary>
-        public CheckForContentUpdateRestrictionsOptions CheckForContentUpdateRestrictionsOption
-        {
-            get { return m_CheckForContentUpdateRestrictionsOption; }
-            set { m_CheckForContentUpdateRestrictionsOption = value; }
-        }
+		/// <summary>
+		/// Informs the Addressable system how to handle checking for Content Update Restrictions during a Content Update build.
+		/// During this check, assets are flagged that have changed, yet are contained in a Group that has the Cannot Change Post Release option set.
+		/// </summary>
+		public CheckForContentUpdateRestrictionsOptions CheckForContentUpdateRestrictionsOption
+		{
+			get { return m_CheckForContentUpdateRestrictionsOption; }
+			set { m_CheckForContentUpdateRestrictionsOption = value; }
+		}
 
 #if ENABLE_CCD
         [SerializeField]
@@ -664,7 +664,7 @@ namespace UnityEditor.AddressableAssets.Settings
         }
 #endif
 
-        [SerializeField]
+		[SerializeField]
 		string m_MonoScriptBundleCustomNaming = "";
 		/// <summary>
 		/// Custom MonoScript bundle prefix that is used if AddressableAssetSettings.MonoScriptBundleNaming is set to MonoScriptBundleNaming.Custom.
@@ -717,34 +717,34 @@ namespace UnityEditor.AddressableAssets.Settings
 		}
 
 		[SerializeField]
-        internal string m_ContentStateBuildPathProfileVariableName = "";
+		internal string m_ContentStateBuildPathProfileVariableName = "";
 
-        [SerializeField]
-        internal string m_CustomContentStateBuildPath = "";
+		[SerializeField]
+		internal string m_CustomContentStateBuildPath = "";
 
-        [SerializeField]
-        internal string m_ContentStateBuildPath = "";
+		[SerializeField]
+		internal string m_ContentStateBuildPath = "";
 		/// <summary>
 		/// The path used for saving the addressables_content_state.bin file.  If empty, this will be the addressable settings config folder in your project.
 		/// </summary>
 		public string ContentStateBuildPath
 		{
-            get 
-            {
-                if (!string.IsNullOrEmpty(m_ContentStateBuildPath))
-                    return m_ContentStateBuildPath;
-                else if (m_ContentStateBuildPathProfileVariableName == AddressableAssetProfileSettings.customEntryString)
-                    return m_CustomContentStateBuildPath;
-                else if (m_ContentStateBuildPathProfileVariableName == AddressableAssetProfileSettings.defaultSettingsPathString)
-                    return $"{AddressableAssetSettingsDefaultObject.kDefaultConfigFolder}/{PlatformMappingService.GetPlatformPathSubFolder()}";
-                else
-                    return profileSettings.GetValueByName(activeProfileId, m_ContentStateBuildPathProfileVariableName);
-            }
-            set 
-            { 
-                m_ContentStateBuildPath = value;
-                m_CustomContentStateBuildPath = value;
-            }
+			get
+			{
+				if (!string.IsNullOrEmpty(m_ContentStateBuildPath))
+					return m_ContentStateBuildPath;
+				else if (m_ContentStateBuildPathProfileVariableName == AddressableAssetProfileSettings.customEntryString)
+					return m_CustomContentStateBuildPath;
+				else if (m_ContentStateBuildPathProfileVariableName == AddressableAssetProfileSettings.defaultSettingsPathString)
+					return $"{AddressableAssetSettingsDefaultObject.kDefaultConfigFolder}/{PlatformMappingService.GetPlatformPathSubFolder()}";
+				else
+					return profileSettings.GetValueByName(activeProfileId, m_ContentStateBuildPathProfileVariableName);
+			}
+			set
+			{
+				m_ContentStateBuildPath = value;
+				m_CustomContentStateBuildPath = value;
+			}
 		}
 
 		[SerializeField]
@@ -1469,7 +1469,7 @@ namespace UnityEditor.AddressableAssets.Settings
 			buildSettings.Validate(this);
 		}
 
-        internal T CreateScriptAsset<T>() where T : ScriptableObject
+		internal T CreateScriptAsset<T>() where T : ScriptableObject
 		{
 			var script = CreateInstance<T>();
 			if (!Directory.Exists(DataBuilderFolder))
@@ -1551,7 +1551,7 @@ namespace UnityEditor.AddressableAssets.Settings
 
 			AddressableAssetGroupTemplate newAssetGroupTemplate = ScriptableObject.CreateInstance<AddressableAssetGroupTemplate>();
 			newAssetGroupTemplate.Description = description;
-            newAssetGroupTemplate.Settings = this;
+			newAssetGroupTemplate.Settings = this;
 
 			AssetDatabase.CreateAsset(newAssetGroupTemplate, assetPath);
 			AssetDatabase.SaveAssets();
@@ -1671,9 +1671,9 @@ namespace UnityEditor.AddressableAssets.Settings
 		internal static AddressableAssetGroup CreateBuiltInData(AddressableAssetSettings aa)
 		{
 			var playerData = aa.CreateGroup(PlayerDataGroupName, false, true, false, null, typeof(PlayerDataGroupSchema));
-            var resourceEntry = aa.CreateOrMoveEntry(AddressableAssetEntry.ResourcesName, playerData, false, false);
+			var resourceEntry = aa.CreateOrMoveEntry(AddressableAssetEntry.ResourcesName, playerData, false, false);
 			resourceEntry.IsInResources = true;
-            aa.CreateOrMoveEntry(AddressableAssetEntry.EditorSceneListName, playerData, false, false);
+			aa.CreateOrMoveEntry(AddressableAssetEntry.EditorSceneListName, playerData, false, false);
 			return playerData;
 		}
 
@@ -1783,86 +1783,86 @@ namespace UnityEditor.AddressableAssets.Settings
 		public AddressableAssetEntry FindAssetEntry(string guid, bool includeImplicit)
 		{
 			AddressableAssetEntry foundEntry = null;
-            if (m_FindAssetEntryCache != null)
+			if (m_FindAssetEntryCache != null)
 			{
-                if (m_FindAssetEntryCache.TryGetCached(guid, out foundEntry))
-                    return foundEntry;
-            }
-            else
-                m_FindAssetEntryCache = new Cache<string, AddressableAssetEntry>(this);
+				if (m_FindAssetEntryCache.TryGetCached(guid, out foundEntry))
+					return foundEntry;
+			}
+			else
+				m_FindAssetEntryCache = new Cache<string, AddressableAssetEntry>(this);
 
-            if (includeImplicit)
+			if (includeImplicit)
+			{
+				for (int i = 0; i < groups.Count; ++i)
 				{
-                for (int i = 0; i < groups.Count; ++i)
-					{
-                    if (groups[i] == null)
-                        continue;
+					if (groups[i] == null)
+						continue;
 
-                    if (groups[i].EntryMap.TryGetValue(guid, out foundEntry))
-                    {
-                        m_FindAssetEntryCache.Add(guid, foundEntry);
-							return foundEntry;
+					if (groups[i].EntryMap.TryGetValue(guid, out foundEntry))
+					{
+						m_FindAssetEntryCache.Add(guid, foundEntry);
+						return foundEntry;
 					}
 
-                    if (groups[i].AssetCollectionEntries.Count > 0)
-				{
-                        foreach (AddressableAssetEntry addressableAssetEntry in groups[i].AssetCollectionEntries)
+					if (groups[i].AssetCollectionEntries.Count > 0)
 					{
-                            foundEntry = addressableAssetEntry.GetAssetCollectionSubEntry(guid);
-                            if (foundEntry != null)
+						foreach (AddressableAssetEntry addressableAssetEntry in groups[i].AssetCollectionEntries)
 						{
-                                m_FindAssetEntryCache.Add(guid, foundEntry);
-                                return foundEntry;
-                            }
+							foundEntry = addressableAssetEntry.GetAssetCollectionSubEntry(guid);
+							if (foundEntry != null)
+							{
+								m_FindAssetEntryCache.Add(guid, foundEntry);
+								return foundEntry;
+							}
 						}
 					}
 				}
 
-                string path = AssetDatabase.GUIDToAssetPath(guid);
-                if (!AddressableAssetUtility.IsPathValidForEntry(path))
-                    return null;
-        
+				string path = AssetDatabase.GUIDToAssetPath(guid);
+				if (!AddressableAssetUtility.IsPathValidForEntry(path))
+					return null;
+
 				// find an explicit parent folder entry within groups
 				string directory = Path.GetDirectoryName(path);
 				while (!string.IsNullOrEmpty(directory))
 				{
 					string folderGuid = AssetDatabase.AssetPathToGUID(directory);
-                    for (int i = 0; i < groups.Count; ++i)
+					for (int i = 0; i < groups.Count; ++i)
 					{
-                        if (groups[i] == null)
-                            continue;
-                        if (groups[i].EntryMap.TryGetValue(folderGuid, out foundEntry))
-					{
-                            foundEntry = foundEntry.GetFolderSubEntry(guid, path);
-						if (foundEntry != null)
-                            {
-                                m_FindAssetEntryCache.Add(guid, foundEntry);
-							return foundEntry;
-                            }
-						Debug.LogError($"Explicit AssetEntry for {directory} unable to find subEntry {path}");
-                            return null;
-                        }
+						if (groups[i] == null)
+							continue;
+						if (groups[i].EntryMap.TryGetValue(folderGuid, out foundEntry))
+						{
+							foundEntry = foundEntry.GetFolderSubEntry(guid, path);
+							if (foundEntry != null)
+							{
+								m_FindAssetEntryCache.Add(guid, foundEntry);
+								return foundEntry;
+							}
+							Debug.LogError($"Explicit AssetEntry for {directory} unable to find subEntry {path}");
+							return null;
+						}
 					}
 					directory = Path.GetDirectoryName(directory);
 				}
-                m_FindAssetEntryCache.Add(guid, null);
+				m_FindAssetEntryCache.Add(guid, null);
 			}
 			else
 			{
-                for (int i = 0; i < groups.Count; ++i)
+				for (int i = 0; i < groups.Count; ++i)
+				{
+					if (groups[i] == null)
+						continue;
+					foundEntry = groups[i].GetAssetEntry(guid);
+					if (foundEntry != null)
 					{
-                    if (groups[i] == null)
-                        continue;
-                    foundEntry = groups[i].GetAssetEntry(guid);
-						if (foundEntry != null)
-                    {
-                        m_FindAssetEntryCache.Add(guid, foundEntry);
-                        return foundEntry;
+						m_FindAssetEntryCache.Add(guid, foundEntry);
+						return foundEntry;
 					}
 				}
 			}
-            
-            return null;
+
+			return null;
 		}
 
 		internal bool IsAssetPathInAddressableDirectory(string assetPath, out string assetName)
@@ -2189,16 +2189,16 @@ namespace UnityEditor.AddressableAssets.Settings
 		/// <param name="g"></param>
 		public void RemoveGroup(AddressableAssetGroup g)
 		{
-            AssetDatabase.StartAssetEditing();
-            try
-            {
-			RemoveGroupInternal(g, true, true);
+			AssetDatabase.StartAssetEditing();
+			try
+			{
+				RemoveGroupInternal(g, true, true);
+			}
+			finally
+			{
+				AssetDatabase.StopAssetEditing();
+			}
 		}
-            finally
-            {
-                AssetDatabase.StopAssetEditing();
-            }
-        }
 
 		internal void RemoveGroupInternal(AddressableAssetGroup g, bool deleteAsset, bool postEvent)
 		{
@@ -2644,12 +2644,12 @@ namespace UnityEditor.AddressableAssets.Settings
 		/// <param name="result">Results from running the active player data build script.</param>
 		public static void BuildPlayerContent(out AddressablesPlayerBuildResult result)
 		{
-            BuildPlayerContent(out result, null);
-        }
-        
-        internal static void BuildPlayerContent(out AddressablesPlayerBuildResult result, AddressablesDataBuilderInput input)
-        {
-            var settings = input != null ? input.AddressableSettings : AddressableAssetSettingsDefaultObject.Settings;
+			BuildPlayerContent(out result, null);
+		}
+
+		internal static void BuildPlayerContent(out AddressablesPlayerBuildResult result, AddressablesDataBuilderInput input)
+		{
+			var settings = input != null ? input.AddressableSettings : AddressableAssetSettingsDefaultObject.Settings;
 			if (settings == null)
 			{
 				string error;
@@ -2667,7 +2667,7 @@ namespace UnityEditor.AddressableAssets.Settings
 
 			NullifyBundleFileIds(settings);
 
-            result = settings.BuildPlayerContentImpl(input);
+			result = settings.BuildPlayerContentImpl(input);
 		}
 
 		internal static void NullifyBundleFileIds(AddressableAssetSettings settings)
@@ -2681,7 +2681,7 @@ namespace UnityEditor.AddressableAssets.Settings
 			}
 		}
 
-        internal AddressablesPlayerBuildResult BuildPlayerContentImpl(AddressablesDataBuilderInput buildContext = null, bool buildAndRelease = false)
+		internal AddressablesPlayerBuildResult BuildPlayerContentImpl(AddressablesDataBuilderInput buildContext = null, bool buildAndRelease = false)
 		{
 			if (Directory.Exists(Addressables.BuildPath))
 			{
@@ -2695,10 +2695,10 @@ namespace UnityEditor.AddressableAssets.Settings
 				}
 			}
 
-            if (buildContext == null)
-                buildContext = new AddressablesDataBuilderInput(this);
-                
-            buildContext.IsBuildAndRelease = buildAndRelease;
+			if (buildContext == null)
+				buildContext = new AddressablesDataBuilderInput(this);
+
+			buildContext.IsBuildAndRelease = buildAndRelease;
 			var result = ActivePlayerDataBuilder.BuildData<AddressablesPlayerBuildResult>(buildContext);
 			if (!string.IsNullOrEmpty(result.Error))
 			{
@@ -2707,7 +2707,7 @@ namespace UnityEditor.AddressableAssets.Settings
 			}
 			else
 				Debug.Log($"Addressable content successfully built (duration : {TimeSpan.FromSeconds(result.Duration).ToString("g")})");
-            
+
 			if (BuildScript.buildCompleted != null)
 				BuildScript.buildCompleted(result);
 			AssetDatabase.Refresh();

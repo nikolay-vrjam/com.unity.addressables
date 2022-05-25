@@ -38,7 +38,7 @@ namespace UnityEditor.AddressableAssets
 		}
 
 		[FormerlySerializedAs("m_addressableAssetSettingsGuid")]
-		[SerializeField]
+		[SerializeField, HideInInspector]
 		internal string m_AddressableAssetSettingsGuid;
 		bool m_LoadingSettingsObject = false;
 
@@ -64,7 +64,7 @@ namespace UnityEditor.AddressableAssets
 			m_LoadingSettingsObject = true;
 			var settings = AssetDatabase.LoadAssetAtPath<AddressableAssetSettings>(path);
 			if (settings != null)
-                AddressablesAssetPostProcessor.OnPostProcess.Register(settings.OnPostprocessAllAssets, 0);
+				AddressablesAssetPostProcessor.OnPostProcess.Register(settings.OnPostprocessAllAssets, 0);
 			m_LoadingSettingsObject = false;
 			return settings;
 		}
@@ -82,7 +82,7 @@ namespace UnityEditor.AddressableAssets
 				Debug.LogErrorFormat("Unable to determine path for default AddressableAssetSettings object with guid {0}.", m_AddressableAssetSettingsGuid);
 				return;
 			}
-            AddressablesAssetPostProcessor.OnPostProcess.Register(settings.OnPostprocessAllAssets, 0);
+			AddressablesAssetPostProcessor.OnPostProcess.Register(settings.OnPostprocessAllAssets, 0);
 			m_AddressableAssetSettingsGuid = AssetDatabase.AssetPathToGUID(path);
 		}
 
@@ -205,7 +205,7 @@ namespace UnityEditor.AddressableAssets
 
 			EditorGUILayout.BeginVertical();
 
-			EditorGUILayout.Space();
+			// EditorGUILayout.Space();
 
 			AddressableAssetSettings newSettings = EditorGUILayout.ObjectField("Settings", settings, typeof(AddressableAssetSettings), false) as AddressableAssetSettings;
 			if (newSettings != settings)
