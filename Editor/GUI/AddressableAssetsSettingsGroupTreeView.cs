@@ -95,8 +95,8 @@ namespace UnityEditor.AddressableAssets.GUI
 					if (obj is GameObject go)
 					{
 #if UNITY_2021_2_OR_NEWER
-                        if (UnityEditor.SceneManagement.PrefabStageUtility.GetPrefabStage(go) != null)
-                            return;
+						if (UnityEditor.SceneManagement.PrefabStageUtility.GetPrefabStage(go) != null)
+							return;
 #else
 						if (UnityEditor.Experimental.SceneManagement.PrefabStageUtility.GetPrefabStage(go) != null)
 							return;
@@ -944,7 +944,6 @@ namespace UnityEditor.AddressableAssets.GUI
 					var group = selectedNodes.First().group;
 					if (!group.IsDefaultGroup())
 					{
-						menu.AddItem(new GUIContent("Remove Group(s)"), false, RemoveGroup, selectedNodes);
 						menu.AddItem(new GUIContent("Delete Group(s)"), false, DeleteGroup, selectedNodes);
 					}
 
@@ -1154,14 +1153,6 @@ namespace UnityEditor.AddressableAssets.GUI
 				m_Editor.settings.SetDirty(AddressableAssetSettings.ModificationEvent.GroupRemoved, null, true, true);
 		}
 
-		protected void RemoveGroup(object context)
-		{
-			if (EditorUtility.DisplayDialog("Remove selected groups?", "The selected groups will be removed from the Addressable asset settings, but the group assets will remain in the project. Continue?", "Yes", "No"))
-			{
-				RemoveGroupImpl(context, false);
-			}
-		}
-
 		protected void DeleteGroup(object context)
 		{
 			if (EditorUtility.DisplayDialog("Delete selected groups?", "Are you sure you want to delete the selected groups?\n\nYou cannot undo this action.", "Yes", "No"))
@@ -1311,7 +1302,7 @@ namespace UnityEditor.AddressableAssets.GUI
 				if (allEntries)
 					RemoveEntry(selectedNodes);
 				if (allGroups)
-					RemoveGroup(selectedNodes);
+					DeleteGroup(selectedNodes);
 			}
 		}
 
