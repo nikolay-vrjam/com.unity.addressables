@@ -1157,7 +1157,7 @@ namespace UnityEditor.AddressableAssets.GUI
 		{
 			if (EditorUtility.DisplayDialog("Delete selected groups?", "Are you sure you want to delete the selected groups?\n\nYou cannot undo this action.", "Yes", "No"))
 			{
-				RemoveEntryImpl(context, true);
+				RemoveGroupImpl(context, true);
 			}
 		}
 
