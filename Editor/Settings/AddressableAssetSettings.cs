@@ -790,7 +790,12 @@ namespace UnityEditor.AddressableAssets.Settings
 				formatter.Serialize(stream, m_ProfileSettings);
 				formatter.Serialize(stream, m_GroupAssets.Count);
 				foreach (var g in m_GroupAssets)
-					g.SerializeForHash(formatter, stream);
+				{
+					if (g != null)
+					{
+						g.SerializeForHash(formatter, stream);
+					}
+				}
 				return (m_CachedHash = HashingMethods.Calculate(stream).ToHash128());
 			}
 		}
