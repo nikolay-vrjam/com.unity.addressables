@@ -37,13 +37,13 @@ namespace UnityEditor.AddressableAssets.Build.DataBuilders
 
 		public override string Name
 		{
-			get { return base.Name + " - Multi-Catalog"; }
+			get => base.Name + " - Multi-Catalog";
 		}
 
 		public List<ExternalCatalogSetup> ExternalCatalogs
 		{
-			get { return externalCatalogs; }
-			set { externalCatalogs = value; }
+			get => externalCatalogs;
+			set => externalCatalogs = value;
 		}
 
 		protected override List<ContentCatalogBuildInfo> GetContentCatalogs(AddressablesDataBuilderInput builderInput, AddressableAssetsBuildContext aaContext)

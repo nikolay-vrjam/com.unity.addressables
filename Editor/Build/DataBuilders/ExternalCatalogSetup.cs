@@ -24,26 +24,26 @@ namespace UnityEditor.AddressableAssets.Build.DataBuilders
 
 		public string CatalogName
 		{
-			get { return catalogName; }
-			set { catalogName = value; }
+			get => catalogName;
+			set => catalogName = value;
 		}
 
 		public string BuildPath
 		{
-			get { return buildPath; }
-			set { buildPath = value; }
+			get => buildPath;
+			set => buildPath = value;
 		}
 
 		public string RuntimeLoadPath
 		{
-			get { return runtimeLoadPath; }
-			set { runtimeLoadPath = value; }
+			get => runtimeLoadPath;
+			set => runtimeLoadPath = value;
 		}
 
 		public IReadOnlyList<AddressableAssetGroup> AssetGroups
 		{
-			get { return assetGroups; }
-			set { assetGroups = new List<AddressableAssetGroup>(value); }
+			get => assetGroups;
+			set => assetGroups = new List<AddressableAssetGroup>(value);
 		}
 
 		public bool IsPartOfCatalog(ContentCatalogDataEntry loc, AddressableAssetsBuildContext aaContext)
@@ -53,16 +53,17 @@ namespace UnityEditor.AddressableAssets.Build.DataBuilders
 				if ((loc.ResourceType == typeof(IAssetBundleResource)))
 				{
 					AddressableAssetEntry entry = aaContext.assetEntries.Find(ae => string.Equals(ae.BundleFileId, loc.InternalId));
-					if (entry == null)
+					if (entry != null)
 					{
-						return false;
+						return assetGroups.Exists(ag => ag.entries.Contains(entry));
 					}
 
-					return assetGroups.Exists(ag => ag.entries.Contains(entry));
+					// If no entry was found, it may refer to a folder asset.
+					return assetGroups.Exists(ag => ag.entries.Any(e => e.IsFolder && e.BundleFileId.Equals(loc.InternalId)));
 				}
 				else
 				{
-					return assetGroups.Exists(ag => ag.entries.Any(e => loc.Keys.Contains(e.guid)));
+					return assetGroups.Exists(ag => ag.entries.Any(e => (e.IsFolder && e.SubAssets.Any(a => loc.Keys.Contains(a.guid))) || loc.Keys.Contains(e.guid)));
 				}
 			}
 			else
