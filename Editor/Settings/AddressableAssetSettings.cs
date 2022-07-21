@@ -149,6 +149,12 @@ namespace UnityEditor.AddressableAssets.Settings
 
 		private const string kEditorHostedGroupTypePrefix = "Editor Hosted";
 		internal static string EditorHostedGroupTypePrefix => kEditorHostedGroupTypePrefix;
+
+#if ENABLE_CCD
+        private const string kCcdManagerGroupTypePrefix = "Automatic";
+        internal static string CcdManagerGroupTypePrefix = kCcdManagerGroupTypePrefix;
+#endif
+
 		/// <summary>
 		/// Default value of remote build path.
 		/// </summary>
@@ -175,7 +181,7 @@ namespace UnityEditor.AddressableAssets.Settings
         /// <summary>
         /// CCD Package Name
         /// </summary>
-        public const string kCCDPackageName = "com.unity.services.Ccd.management";
+        public const string kCCDPackageName = "com.unity.services.ccd.management";
 #endif
 
 
@@ -1363,6 +1369,14 @@ namespace UnityEditor.AddressableAssets.Settings
 			internal set { m_HostingServicesManager = value; }
 		}
 
+#if ENABLE_CCD
+        /// <summary>
+        /// Stores the CcdManager data in the ResourceManagerRuntimeData to set.
+        /// </summary>
+        [SerializeField]
+        internal CcdManagedData m_CcdManagedData = new CcdManagedData();
+#endif
+
 		/// <summary>
 		/// Gets all asset entries from all groups.
 		/// </summary>
@@ -1420,6 +1434,7 @@ namespace UnityEditor.AddressableAssets.Settings
 		{
 			profileSettings.OnAfterDeserialize(this);
 			buildSettings.OnAfterDeserialize(this);
+            HostingServicesManager.OnAwake();
 		}
 
 		void OnEnable()
@@ -1665,11 +1680,13 @@ namespace UnityEditor.AddressableAssets.Settings
 			{
 				if (value == null)
 					Addressables.LogError("Unable to set null as the Default Group.  Default Groups must not be ReadOnly.");
-
 				else if (!value.CanBeSetAsDefault())
 					Addressables.LogError("Unable to set " + value.Name + " as the Default Group.  Default Groups must not be ReadOnly.");
-				else
+                else if (m_DefaultGroup != value.Guid)
+                {
 					m_DefaultGroup = value.Guid;
+                    SetDirty(ModificationEvent.BatchModification, null, false, true);
+                }
 			}
 		}
 
@@ -2470,6 +2487,8 @@ namespace UnityEditor.AddressableAssets.Settings
         {
             AddressableAssetBuildResult result = null;
             var settings = AddressableAssetSettingsDefaultObject.Settings;
+            var dataSourceSettings = ProfileDataSourceSettings.GetSettings();
+
             if (settings == null)
             {
                 string error;
@@ -2502,74 +2521,146 @@ namespace UnityEditor.AddressableAssets.Settings
                 Directory.Delete(kCCDBuildDataPath, true);
             }
 
+            //CcdManagedData should only be configured if ConfigState is Default
+            if (settings.m_CcdManagedData.State == CcdManagedData.ConfigState.Default)
+            {
+                var existingGroupType = GetDefaultGroupType(settings, dataSourceSettings);
+                settings.m_CcdManagedData.EnvironmentId = dataSourceSettings.currentEnvironment.id;
+                settings.m_CcdManagedData.EnvironmentName = dataSourceSettings.currentEnvironment.name;
+
+                if (existingGroupType != null)
+                {
+                    settings.m_CcdManagedData.BucketId = existingGroupType.GetVariableBySuffix($"{nameof(CcdBucket)}{nameof(CcdBucket.Id)}").Value;
+                    settings.m_CcdManagedData.Badge = existingGroupType.GetVariableBySuffix($"{nameof(CcdBadge)}{nameof(CcdBadge.Name)}").Value;
+
+                }
+                else
+                {
+                    var createdBucket = await CreateManagedBucket(dataSourceSettings.currentEnvironment.id);
+                    settings.m_CcdManagedData.BucketId = createdBucket.Id.ToString();
+                    settings.m_CcdManagedData.Badge = "latest";
+                }
+            }
+
             //Build the player content
+            bool foundRemoteContent = false;
             result = settings.BuildPlayerContentImpl(new AddressablesDataBuilderInput(settings), true);
+
+            // Verify files exist that need uploading
+            foreach (var path in result.FileRegistry.GetFilePaths())
+            {
+                if (path.StartsWith(kCCDBuildDataPath))
+                {
+                    foundRemoteContent = true;
+                    break;
+                }
+            }
+            if (!foundRemoteContent)
+            {
+                Addressables.LogWarning("Skipping upload and release as no remote content was found to upload. Ensure you have at least one content group's 'Build & Load Path' set to Remote.");
+                return result;
+            }
 
             //Getting files
             Addressables.Log("Creating and uploading entries");
             var startDirectory = new DirectoryInfo(kCCDBuildDataPath);
-            var buckets = CreateBucketData(startDirectory);
+            var buildData = CreateData(startDirectory);
 
 
             //Creating a release for each bucket
-            await CreateReleaseForBuckets(buckets);
+            await UploadAndRelease(settings, buildData);
 
             return result;
 
         }
 
-        static Dictionary<DirectoryInfo, Dictionary<DirectoryInfo, List<FileInfo>>> CreateBucketData(DirectoryInfo startDirectory)
+        static ProfileGroupType GetDefaultGroupType(AddressableAssetSettings settings, ProfileDataSourceSettings dataSourceSettings)
         {
-            var buckets = new Dictionary<DirectoryInfo, Dictionary<DirectoryInfo, List<FileInfo>>>();
-            var bucketDirs = startDirectory.GetDirectories().Where(d => !d.Attributes.HasFlag(FileAttributes.Hidden));
-            foreach (var bucketDir in bucketDirs)
+            ProfileGroupType existingGroupType = null;
+
+            //Find existing bucketId
+            var groupTypes = dataSourceSettings.GetGroupTypesByPrefix(string.Join(ProfileGroupType.k_PrefixSeparator.ToString(), new string[] {
+                "CCD",
+                CloudProjectSettings.projectId,
+                dataSourceSettings.currentEnvironment.id
+            }));
+            existingGroupType = groupTypes.Where(gt =>
+                gt.GetVariableBySuffix($"{nameof(CcdBucket)}{nameof(CcdBucket.Name)}").Value == EditorUserBuildSettings.activeBuildTarget.ToString()
+            ).FirstOrDefault();
+
+            return existingGroupType;
+        }
+
+        static CcdBuildDataFolder CreateData(DirectoryInfo startDirectory)
+        {
+            var buildDataFolder = new CcdBuildDataFolder()
             {
-                var badgeDirs = bucketDir.GetDirectories().Where(d => !d.Attributes.HasFlag(FileAttributes.Hidden));
-                foreach (var badgeDir in badgeDirs)
+                Name = kCCDBuildDataPath,
+                Location = startDirectory.FullName
+            };
+            buildDataFolder.GetChildren(startDirectory);
+            return buildDataFolder;
+        }
+
+        async static Task<CcdBucket> CreateManagedBucket(string envId)
                 {
-                    var files = badgeDir.GetFiles().Where(f => !f.Attributes.HasFlag(FileAttributes.Hidden)).ToList();
-                    if (!buckets.ContainsKey(bucketDir))
+            CcdBucket ccdBucket = new CcdBucket();
+            try
                     {
-                        var badges = new Dictionary<DirectoryInfo, List<FileInfo>>();
-                        badges.Add(badgeDir, files);
-                        buckets.Add(bucketDir, badges);
+                CcdManagement.SetEnvironmentId(envId);
+                ccdBucket = await CcdManagement.Instance.CreateBucketAsync(new CreateBucketOptions(EditorUserBuildSettings.activeBuildTarget.ToString()));
                     }
-                    else
+            catch (CcdManagementException e)
                     {
-                        buckets.TryGetValue(bucketDir, out var badges);
-                        if (!badges.ContainsKey(badgeDir))
+                if (e.ErrorCode == CcdManagementErrorCodes.AlreadyExists)
                         {
-                            badges.Add(badgeDir, files);
+                    var buckets = await ProfileDataSourceSettings.GetAllBucketsAsync(envId);
+                    ccdBucket = buckets.Where(bucket => bucket.Value.Name == EditorUserBuildSettings.activeBuildTarget.ToString()).First().Value;
                         }
                         else
                         {
-                            badges.TryGetValue(badgeDir, out var existingFiles);
-                            existingFiles.AddRange(files);
-                        }
+                    throw e;
                     }
                 }
+            return ccdBucket;
             }
 
-            return buckets;
+        async static Task UploadAndRelease(AddressableAssetSettings settings, CcdBuildDataFolder buildData)
+        {
+            foreach (var env in buildData.Environments)
+            {
+                CcdManagement.SetEnvironmentId(env.Name);
+
+                if (env.Name == ProfileDataSourceSettings.MANAGED_ENVIRONMENT)
+                {
+                    CcdManagement.SetEnvironmentId(ProfileDataSourceSettings.GetSettings().currentEnvironment.id);
         }
 
-        async static Task CreateReleaseForBuckets(Dictionary<DirectoryInfo, Dictionary<DirectoryInfo, List<FileInfo>>> buckets)
+                foreach (var bucket in env.Buckets)
         {
-            foreach (var bucketKvp in buckets)
+                    Guid bucketId;
+                    if (bucket.Name == ProfileDataSourceSettings.MANAGED_BUCKET)
             {
-                Guid bucketId = Guid.Parse(bucketKvp.Key.Name);
-
-                foreach (var badgeKvp in bucketKvp.Value)
-                {
-                    string badgeName = badgeKvp.Key.Name;
-                    List<CcdReleaseEntryCreate> entries = new List<CcdReleaseEntryCreate>();
-
-                    foreach (var path in badgeKvp.Value)
+                        bucketId = Guid.Parse(settings.m_CcdManagedData.BucketId);
+                    }
+                    else
                     {
-                        string contentHash = AddressableAssetUtility.GetMd5Hash(path.FullName);
-                        using (var stream = File.OpenRead(path.FullName))
+                        bucketId = Guid.Parse(bucket.Name);
+                    }
+
+                    foreach (var badge in bucket.Badges)
+                    {
+                        if (badge.Name == ProfileDataSourceSettings.MANAGED_BADGE)
+                {
+                            badge.Name = "latest";
+                        }
+                    List<CcdReleaseEntryCreate> entries = new List<CcdReleaseEntryCreate>();
+                        foreach (var file in badge.Files)
+                    {
+                            string contentHash = AddressableAssetUtility.GetMd5Hash(file.FullName);
+                            using (var stream = File.OpenRead(file.FullName))
                         {
-                            var entryPath = path.Name;
+                                var entryPath = file.Name;
                             var entryModelOptions = new EntryModelOptions(entryPath, contentHash, (int)stream.Length)
                             {
                                 UpdateIfExists = true
@@ -2588,17 +2679,18 @@ namespace UnityEditor.AddressableAssets.Settings
                     var release = await CcdManagement.Instance.CreateReleaseAsync(new CreateReleaseOptions(bucketId)
                     {
                         Entries = entries,
-                        Notes = $"Automated release created for {badgeName}"
+                            Notes = $"Automated release created for {badge.Name}"
                     });
                     Addressables.Log($"Release {release.Releaseid} created.");
 
                     //Don't update latest badge (as it always updates)
-                    if (badgeName != "latest")
+                        if (badge.Name != "latest")
                     {
                         //Updating badge
                         Addressables.Log("Updating badge.");
-                        var badge = await CcdManagement.Instance.AssignBadgeAsync(new AssignBadgeOptions(bucketId, badgeName, release.Releaseid));
-                        Addressables.Log($"Badge {badge.Name} updated.");
+                            var badgeRes = await CcdManagement.Instance.AssignBadgeAsync(new AssignBadgeOptions(bucketId, badge.Name, release.Releaseid));
+                            Addressables.Log($"Badge {badgeRes.Name} updated.");
+                        }
                     }
                 }
             }
@@ -2671,6 +2763,31 @@ namespace UnityEditor.AddressableAssets.Settings
 			}
 
 			NullifyBundleFileIds(settings);
+
+#if ENABLE_CCD
+            var dataSourceSettings = ProfileDataSourceSettings.GetSettings();
+            //CcdManagedData should only be configured if ConfigState is Default
+            if (settings.m_CcdManagedData.State == CcdManagedData.ConfigState.Default)
+            {
+                var existingGroupType = GetDefaultGroupType(settings, dataSourceSettings);
+                settings.m_CcdManagedData.EnvironmentId = dataSourceSettings.currentEnvironment.id;
+                settings.m_CcdManagedData.EnvironmentName = dataSourceSettings.currentEnvironment.name;
+
+                if (existingGroupType != null)
+                {
+                    settings.m_CcdManagedData.BucketId = existingGroupType.GetVariableBySuffix($"{nameof(CcdBucket)}{nameof(CcdBucket.Id)}").Value;
+                    settings.m_CcdManagedData.Badge = existingGroupType.GetVariableBySuffix($"{nameof(CcdBadge)}{nameof(CcdBadge.Name)}").Value;
+                }
+                else
+                {
+                    string error = "Unable to create bucket from build step. Please either use the \"Build and Release\" integration or Create the active build target bucket and refresh CCD data sources.";
+                    Debug.LogError(error);
+                    result = new AddressablesPlayerBuildResult();
+                    result.Error = error;
+                    return;
+                }
+            }
+#endif
 
 			result = settings.BuildPlayerContentImpl(input);
 		}
