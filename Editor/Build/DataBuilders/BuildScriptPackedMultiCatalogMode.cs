@@ -158,7 +158,7 @@ namespace UnityEditor.AddressableAssets.Build.DataBuilders
 				FileMoveOverwrite(Path.Combine(Addressables.BuildPath, setup.BuildInfo.JsonFilename), Path.Combine(bundlePath, setup.BuildInfo.JsonFilename));
 				foreach (var file in setup.Files)
 				{
-					FileMoveOverwrite(file, Path.Combine(bundlePath, Path.GetFileName(file)));
+	//				FileMoveOverwrite(file, Path.Combine(bundlePath, Path.GetFileName(file)));
 				}
 			}
 
